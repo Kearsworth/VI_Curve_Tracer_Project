@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+vi_ml/models/*.joblib
+vi_ml/figs_ml/
+*.png
+data/
+.DS_Store
+.pytest_cache/
