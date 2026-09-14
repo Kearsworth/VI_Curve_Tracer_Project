@@ -8,3 +8,4 @@ vi_ml/figs_ml/
 data/
 .DS_Store
 .pytest_cache/
+.claude/

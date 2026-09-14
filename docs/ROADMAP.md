@@ -3,10 +3,20 @@
 Ordered roughly by priority. Check items off as they land.
 
 ## Phase A — Hardware/software integration (current focus)
-- [ ] ESP32 firmware: generate sine on DAC, read 2 channels on ADC at a fixed, known
+- [x] ESP32 firmware: generate sine on DAC, read 2 channels on ADC at a fixed, known
       sample rate, stream over USB serial. See `firmware/esp32/README.md`.
-- [ ] Loopback mode: DAC wired to ADC directly (no circuit) to validate the data path
+      — Stage 3 (`firmware/esp32/loopback/sine_capture`) written and **verified on real
+      hardware 2026-09-15**: live capture shows a clean sine in `adc_v_counts`/`adc_i_counts`.
+      Caveat: "2 channels" is still code-level only — `adc_i_counts` reads the same physical
+      pin as V (no real sense resistor exists yet), so this isn't a true 2-channel capture
+      until the real circuit exists. Sample rate is free-running (not a literal fixed-interval
+      timer) by design — see `firmware/esp32/README.md` Stage 3 note for why that's still
+      "fixed, known" enough.
+- [x] Loopback mode: DAC wired to ADC directly (no circuit) to validate the data path
       end-to-end (send waveform, read it back, confirm it matches).
+      — Stage 2 (ramp) verified wiring/peripherals. Stage 3 (sine) now verified the same way
+      with a real sine drive, timed sampling, and phase-labeled framing — live capture matches
+      expected sine shape (peak/trough land near phase ≈ π/2 and 3π/2 as expected).
 - [ ] `hardware/reader.py`: read serial → counts→volts → build raw dict → hand to
       `calibrate.calibrate()`. (Start from `hardware/reader_stub.py`.)
 - [ ] Verify a full real capture flows through calibrate→features→verify without changes

@@ -70,18 +70,36 @@ Components: `R, C, L, D, LED, Z`.
 Faults per component (shape-changing only): open, short (all); esr, leak (C); dcr,
 shorted_turns (L); reversed, degraded (D, LED); reversed, vz_shift (Z).
 
-## 7. FUTURE: ESP32 → PC serial frame (proposed, adjust when firmware is built)
+## 7. ESP32 → PC serial frame
 
-One reading per line over USB serial, e.g. CSV:
+**As built in Stage 3** (`firmware/esp32/loopback/sine_capture`, loopback milestone — see
+`firmware/esp32/README.md` for the design decisions behind these choices). One reading per
+line over USB serial at **921600 baud**, CSV:
 
 ```
-index,adc_ch_v,adc_ch_i     # adc_* are raw ADC counts
-0,2048,1990
-1,2131,2050
+index,t_us,phase_rad,adc_v_counts,adc_i_counts
+0,0,0.0000,131,131
+1,187,0.0587,148,148
 ...
 ```
 
-PC side (`hardware/reader.py`) converts counts → volts (using ADC V_ref / resolution),
-computes I = V_senseR / Rr, builds `phase = 2*pi*f*t`, and packs the raw dict from section 1.
-Firmware may instead send a compact binary block for speed — keep the decoded result
-identical to section 1 either way.
+Preceded once at boot by comment lines (prefixed `#`, skip when parsing) carrying capture
+settings: `drive_freq_hz`, `lut_size`, `dac_center`, `dac_amplitude_counts`, `A_nominal_v`
+(nominal/uncalibrated drive amplitude — see Stage 2's measured offset/gain note in
+`firmware/esp32/README.md`), `Rr_ohm_placeholder` (loopback has no real sense resistor yet),
+`vref`, `dac_bits`, `adc_bits`, `baud`.
+
+`t_us` was added on top of the originally proposed `index,adc_ch_v,adc_ch_i` shape because
+Stage 3 samples free-running (no fixed-interval timer) — `phase_rad` is computed firmware-side
+from each sample's *actual* elapsed time, not an assumed constant `dt`, so the timestamp (or
+the already-computed `phase_rad`) has to travel with each sample rather than being inferred
+from `index` alone. `adc_i_counts` currently reads the same physical pin as `adc_v_counts`
+(no real sense resistor exists yet in the loopback setup) — that's expected at this stage, not
+a data quality issue.
+
+PC side (`hardware/reader.py`) converts counts → volts (needs the real, *calibrated*
+offset/gain per channel — see Stage 2's finding that `adc ≈ 16.0×dac − 231`, not the ideal
+`counts * 3.3/4095` — not implemented yet), computes I = V_senseR / Rr once a real sense
+resistor exists, and packs the raw dict from section 1 using the already-provided
+`phase_rad` directly. Firmware may move to a compact binary block for speed once real capture
+rates go up — keep the decoded result identical to section 1 either way.
