@@ -30,6 +30,11 @@ Ordered roughly by priority. Check items off as they land.
       a bootstrap.
 
 ## Phase C — Model quality (soft faults)
+- [ ] Quick experiment first: benchmark ANN and SVM against the current RF on the
+      *existing* 12 features, focused on the 3 known-weak soft faults. Motivated by
+      docs/LITERATURE.md §3 — a closely related published study found ANN/SVM beating RF
+      specifically on soft faults. Cheaper to try than new features; do this before or
+      alongside the item below.
 - [ ] Add features targeting soft faults: reverse-leakage slope, ESR tilt / loss tangent,
       diode knee sharpness.
 - [ ] Add a confidence "review band" (e.g. predict_proba in 0.4–0.6 ⇒ flag for human

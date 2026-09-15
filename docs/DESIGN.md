@@ -64,8 +64,14 @@ axes independently.
   thresholds it. It's the floor every real model must beat.
 - **Random Forest (main)**: accurate with little data, needs almost no tuning, no feature
   scaling required, handles non-linear boundaries, and — crucially — is **explainable**
-  via feature importance (we can say *which* features drove a decision). Backed by
-  literature (Selim et al., 2025) where RF beat SVM/KNN on I-V features.
+  via feature importance (we can say *which* features drove a decision). The originally
+  cited backing ("Selim et al., 2025", RF beat SVM/KNN on I-V features) could not be
+  independently verified — see `docs/LITERATURE.md` §1. The closest verified study on the
+  same kind of problem (Dieste-Velasco, 2025, *Integration* 104, 102482) actually found
+  ANN (97.9%) and SVM (97.2%) beating RF (93.1%, with a visible train/test overfitting gap)
+  on soft-fault classification. RF stays our main model for its explainability and low
+  tuning cost — that's a deliberate trade-off we're making, not a literature-settled fact.
+  See `docs/LITERATURE.md` §3 before treating RF's superiority as proven.
 - **Isolation Forest (anomaly)**: trained on **good parts only**, flags anything unusual.
   Matches the real world where faulty examples are rare. Lower AUC (0.87) than the
   supervised model, but needs no faulty data.
