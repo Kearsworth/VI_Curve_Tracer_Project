@@ -61,7 +61,8 @@ vi_ml/            The ML pipeline (Python, run from inside this folder)
 tests/            pytest tests that encode the invariants (run these after changes!)
 hardware/         reader_stub.py — how a PySerial reader will produce the raw dict
 firmware/esp32/   plan/spec for the ESP32 firmware (DAC out, ADC in, serial, loopback)
-docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks)
+docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks),
+                  LITERATURE.md (external check on the model-choice claims)
 ```
 
 ## 5. How to run
@@ -96,6 +97,9 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
    via feature importance). Isolation Forest is the anomaly path (trained on good only).
    RMS-distance is a no-training baseline. PyTorch is reserved for FUTURE deep learning
    (1D-CNN/Siamese) — it is NOT used yet; don't add it to the runtime path.
+   **Caveat (2026-09-14):** the literature citation backing "RF beats SVM/KNN" couldn't be
+   verified, and the closest real study found the opposite on soft faults — see
+   `docs/LITERATURE.md` before treating this as settled or swapping the model.
 5. **Faults are shape-changing by design** (open/short/reversed/ESR/DCR/leak/...).
    Mild value drift is NOT treated as a fault here (a healthy wrong-value part looks
    "good" from shape alone; catching that needs a reference-comparison path — roadmap).
@@ -135,3 +139,9 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 - `docs/DATA_CONTRACT.md` — exact input/output formats (raw dict, signature, features, verdict, serial frame).
 - `docs/ROADMAP.md` — concrete next tasks.
 - `docs/WORKING_WITH_CLAUDE.md` — how to drive Claude Code effectively on this project.
+- `docs/LITERATURE.md` — external literature check on the model-choice and soft-fault
+  claims in DESIGN.md, plus how our pipeline's flow compares to closely related published
+  work. Read this before changing `train.py`'s classifier stack or `verify.py`'s
+  evaluation, or before citing "Selim et al., 2025" as settled. §7 covers the V-I
+  loop/Lissajous-feature-engineering choice specifically (separate from the §1-3
+  classifier-choice check) — read it before changing `features.py`'s feature set.
