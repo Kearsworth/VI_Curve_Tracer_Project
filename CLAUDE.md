@@ -59,7 +59,7 @@ vi_ml/            The ML pipeline (Python, run from inside this folder)
   plot_signatures.py  renders the 6-component good-vs-faulty figure
   models/         trained models land here (git-ignored)
 tests/            pytest tests that encode the invariants (run these after changes!)
-hardware/         reader_stub.py — how a PySerial reader will produce the raw dict
+hardware/         reader.py — ESP32 serial frames → raw dict (counts→volts, whole cycles)
 firmware/esp32/   plan/spec for the ESP32 firmware (DAC out, ADC in, serial, loopback)
 docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks),
                   LITERATURE.md (external check on the model-choice claims)
@@ -127,7 +127,7 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 ## 9. What we're working on next (see docs/ROADMAP.md for the full list)
 
 1. ESP32 firmware: DAC drive + 2-channel ADC read + serial framing + loopback mode.
-2. `hardware/reader.py`: read serial → convert to physical units → raw dict → calibrate.
+2. `hardware/reader.py` (written; needs real-data check): read serial → convert to physical units → raw dict → calibrate.
 3. Validate the trained model on real captured data; retrain/fine-tune as needed.
 4. Soft-fault features (reverse-leakage slope, ESR tilt, knee sharpness) + a confidence
    "review band".

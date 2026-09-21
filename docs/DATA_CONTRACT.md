@@ -11,7 +11,7 @@ raw = {
     "v":     np.ndarray,  # raw voltage-across-DUT samples (volts), shape (M,)
     "i":     np.ndarray,  # raw current samples (amperes), shape (M,)
     "phase": np.ndarray,  # drive-signal phase for each sample (radians), shape (M,)
-    "A":     float,       # drive amplitude (volts, peak) — a capture setting
+    "A":     float,       # drive amplitude (volts, peak) — MEASURED at the drive node, real volts
     "Rr":    float,       # sense/range resistor value (ohms) — a capture setting
 }
 ```
@@ -20,6 +20,11 @@ raw = {
 - `phase` comes from the drive signal (known from the frequency / SYNC), NOT estimated from
   the loop geometry. In synth this is `omega * t`.
 - `A` and `Rr` are needed for normalization and must travel with the capture.
+- `A` is the **measured** peak at the drive node, in the same real-volt units as `v` — not the
+  DAC's nominal setting (the firmware's `A_nominal_v`). The synthetic data is trained at
+  `A = 5 V`, and a diode/LED knee sits at a fixed absolute voltage, so real captures are
+  levelled (DAC swing adjusted, capture, measure `A`, repeat) until the measured `A` is 5 V ±
+  1–2%. Loopback has no drive-node channel yet, so it still falls back to the nominal value.
 
 ## 2. Calibrated signature (output of calibrate.py)
 
@@ -97,9 +102,12 @@ from `index` alone. `adc_i_counts` currently reads the same physical pin as `adc
 (no real sense resistor exists yet in the loopback setup) — that's expected at this stage, not
 a data quality issue.
 
-PC side (`hardware/reader.py`) converts counts → volts (needs the real, *calibrated*
-offset/gain per channel — see Stage 2's finding that `adc ≈ 16.0×dac − 231`, not the ideal
-`counts * 3.3/4095` — not implemented yet), computes I = V_senseR / Rr once a real sense
-resistor exists, and packs the raw dict from section 1 using the already-provided
-`phase_rad` directly. Firmware may move to a compact binary block for speed once real capture
+PC side (`hardware/reader.py`, implemented) skips `#` lines, the header, and malformed rows
+(e.g. a half-received first line), keeps only whole drive cycles (first phase wrap → last
+phase wrap), converts counts → volts through a per-channel `ChannelCal(offset, gain)`, computes
+I = V_senseR / Rr, and packs the raw dict from section 1 using the already-provided
+`phase_rad` directly. The default `ChannelCal` is the *ideal* `counts * 3.3/4095` at mid-rail,
+which Stage 2 showed is off on this board (`adc ≈ 16.0×dac − 231`); the loopback path
+(`--loopback`) re-centres on the sine midpoint instead, and real captures need a fitted
+offset/gain per channel — still TODO. Firmware may move to a compact binary block for speed once real capture
 rates go up — keep the decoded result identical to section 1 either way.
