@@ -39,3 +39,15 @@ _Avoid_: frame (that is one serial line), trace, run
 **Signature**:
 The normalized 360-point voltage–current loop calibrated from a capture, indexed by drive phase.
 _Avoid_: curve, loop (as a noun for the data)
+
+**Signature generator**:
+A board that fakes a plausible V-I signature (not real component physics) so the capture path can be tested before the real circuit exists. Today this is ESP32 #1 running `signature_gen`; it gets replaced by the drive stage + DUT + return path once those are confirmed, without the capture unit changing.
+_Avoid_: fake DUT, simulator (ambiguous with `synth.py`, which simulates physics in Python, not hardware)
+
+**Capture unit**:
+The board that owns ADC + serial framing + streaming to the PC, regardless of what's feeding it (a signature generator today, the real circuit later). Today this is ESP32 #2 running `signature_capture`.
+_Avoid_: reader (that's the PC-side `hardware/reader.py`), receiver
+
+**Sync pulse**:
+A digital pulse from the signature generator marking the start of each drive cycle, so the capture unit can derive phase from a *measured* period when it isn't the one generating the drive. Exists only in the two-board setup — the single-board loopback doesn't need it, since the same chip drives and samples.
+_Avoid_: trigger, clock

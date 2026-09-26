@@ -27,6 +27,18 @@ Ordered roughly by priority. Check items off as they land.
 - [ ] Verify a full real capture flows through calibrate→features→verify without changes
       to the ML code. (Mechanically verified on *simulated* frames; needs a real saved capture:
       `python3 hardware/reader.py --port <port> --loopback --verify`.)
+- [ ] **Two-board bring-up** (`firmware/esp32/dual_board/`, written 2026-09-26): ESP32 #1
+      (`signature_gen`) fakes a V-I signature (line/ellipse/knee, shape selectable live over
+      its own serial port) as a stand-in for the real circuit + DUT; ESP32 #2
+      (`signature_capture`) reads it on two REAL non-aliased ADC channels, using a sync-pulse
+      wire to derive phase from a *measured* period rather than an assumed frequency — see
+      `dual_board/README.md` for the wiring and the phase-sync reasoning. Both sketches
+      **compile but are not yet run on real hardware**. Confirmed in software: a simulated
+      capture in this exact frame format (including the `-1`-phase "not synced yet" rows)
+      flows through `hardware/reader.py` → `calibrate.py` → `features.py` with **no changes**.
+      Next: flash both boards, wire per the README, run
+      `python3 hardware/reader.py --port <port> --verify` (no `--loopback` — channels are
+      real now) and confirm each shape reads back as roughly the intended figure.
 
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2

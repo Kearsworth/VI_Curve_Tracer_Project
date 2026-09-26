@@ -69,6 +69,14 @@ Concrete decisions made (previously open below):
   currently aliased to the same pin as `ADC_V_PIN` (no real sense resistor exists yet); wiring
   it to a real second channel is meant to be a one-line change once the circuit exists.
 
+## Two-board bring-up (parallel path, while the return path is unconfirmed)
+
+See `dual_board/README.md` — a second bring-up path, alongside the loopback above, that
+splits signature generation and capture across two ESP32 boards. Not a replacement for the
+loopback or a shortcut around the return-path question below; it's a way to exercise the
+*capture* path (real 2-channel ADC, inter-board sync, serial framing, `hardware/reader.py`)
+on real hardware bytes before the real circuit exists.
+
 ## Confirmed analog front-end: 0–3.3V ↔ ±10V level shifter
 *Confirmed with Dr. Wathis's circuit, 2026-09-15 — drive side only, see caveat below.*
 
