@@ -24,7 +24,7 @@ pytest -q
 
 - `vi_ml/` — the ML pipeline: `synth`, `calibrate`, `features`, `train`, `verify`, `demo`.
 - `tests/` — invariant tests (run after any change to the pipeline).
-- `hardware/` — how serial data becomes the pipeline's input (`reader_stub.py`).
+- `hardware/` — how serial data becomes the pipeline's input (`reader.py`).
 - `firmware/esp32/` — plan for the ESP32 firmware (DAC out / ADC in / serial / loopback).
 - `docs/` — `DESIGN.md` (why), `DATA_CONTRACT.md` (formats), `ROADMAP.md` (tasks),
   `WORKING_WITH_CLAUDE.md` (how to use Claude Code here).
