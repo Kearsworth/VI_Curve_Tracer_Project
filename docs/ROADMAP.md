@@ -27,18 +27,22 @@ Ordered roughly by priority. Check items off as they land.
 - [ ] Verify a full real capture flows through calibrate→features→verify without changes
       to the ML code. (Mechanically verified on *simulated* frames; needs a real saved capture:
       `python3 hardware/reader.py --port <port> --loopback --verify`.)
-- [ ] **Two-board bring-up** (`firmware/esp32/dual_board/`, written 2026-09-26): ESP32 #1
-      (`signature_gen`) fakes a V-I signature (line/ellipse/knee, shape selectable live over
-      its own serial port) as a stand-in for the real circuit + DUT; ESP32 #2
-      (`signature_capture`) reads it on two REAL non-aliased ADC channels, using a sync-pulse
-      wire to derive phase from a *measured* period rather than an assumed frequency — see
-      `dual_board/README.md` for the wiring and the phase-sync reasoning. Both sketches
-      **compile but are not yet run on real hardware**. Confirmed in software: a simulated
-      capture in this exact frame format (including the `-1`-phase "not synced yet" rows)
-      flows through `hardware/reader.py` → `calibrate.py` → `features.py` with **no changes**.
-      Next: flash both boards, wire per the README, run
-      `python3 hardware/reader.py --port <port> --verify` (no `--loopback` — channels are
-      real now) and confirm each shape reads back as roughly the intended figure.
+- [x] **Two-board bring-up** (`firmware/esp32/dual_board/`, written 2026-09-26,
+      **verified on real hardware 2026-09-29**): ESP32 #1 (`signature_gen`) fakes a V-I
+      signature (line/ellipse/knee, shape selectable live over its own serial port) as a
+      stand-in for the real circuit + DUT; ESP32 #2 (`signature_capture`) reads it on two REAL
+      non-aliased ADC channels, using a sync-pulse wire to derive phase from a *measured*
+      period rather than an assumed frequency — see `dual_board/README.md` for the wiring and
+      the phase-sync reasoning. Two physical boards flashed, wired, and run end-to-end through
+      `hardware/reader.py` → `calibrate.py` → `features.py`: all three shapes came back
+      geometrically correct (`R` correlation +0.9995/aspect 0.014, `C` correlation −0.013/
+      aspect 0.981, `D` correlation +0.865/aspect 0.210 — see `dual_board/README.md`'s table).
+      `R`'s measured slope (0.59) matched the firmware's hand-coded 0.6 within 2%.
+      **Caveat:** sync-derived phase has visible jitter (`n_segments` ~160 vs. an expected
+      ~2–4) — shapes are right, fine detail isn't perfectly smooth; likely the un-atomic
+      volatile reads already flagged in the README, not yet fixed.
+      `hardware/dual_board_signature_check.py` (new) captures all three shapes and plots the
+      calibrated V-I loop side by side — rerun this after any firmware change to the pair.
 
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2

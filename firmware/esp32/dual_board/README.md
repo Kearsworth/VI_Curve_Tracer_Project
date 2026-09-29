@@ -1,6 +1,9 @@
 # Two-board bring-up: synthetic signature generator + capture unit
 
-**Status: written 2026-09-26, compiles for the ESP32 DevKit, NOT yet run on real hardware.**
+**Status: written 2026-09-26, verified on real hardware 2026-09-29** — both boards flashed,
+wired per the diagram below, and all three shapes captured end-to-end through
+`hardware/reader.py` → `calibrate.py` → `features.py`. See "What's proven vs. not" below for
+exactly what that does and doesn't confirm.
 
 ## Why this exists
 
@@ -79,22 +82,51 @@ signature test.
 
 ## What's proven vs. not (be honest about this)
 
-- Both sketches **compile** for the ESP32 DevKit. **Neither has been run on real hardware
-  yet** — the sync-timing behavior (interrupt jitter, whether the measured period is stable
-  enough) is unverified until it's flashed to two real boards and wired up.
-- `hardware/reader.py` was checked against a **simulated** two-board capture (matching this
-  exact frame format, including unsynced `-1`-phase rows) and needs no changes — but that's
-  simulated bytes, not a real capture yet.
-- The volatile reads in `signature_capture.ino` (`lastSyncUs`/`prevPeriodUs`) aren't
-  interrupt-guarded (no `noInterrupts()`/atomic section) — acceptable for this demo/bring-up
-  tool, not something to carry into a production capture path without revisiting.
+**Confirmed on real hardware, 2026-09-29** — two physical ESP32 DevKits, wired per the
+diagram above, both boards' own USB port connected to the same PC. Sent each shape command
+to GEN, captured from CAP via `hardware/reader.py`, ran `calibrate.py` → `features.py`, and
+checked the calibrated V-I loop's correlation and aspect ratio (see
+`hardware/dual_board_signature_check.py`, the script that ran this check):
+
+| shape | expected      | V-I correlation | aspect (minor/major) | reads as |
+|-------|---------------|-----------------:|----------------------:|----------|
+| `R`   | line          | +0.9995           | 0.014                 | line ✓ |
+| `C`   | ellipse       | −0.013 (≈0)        | 0.981 (≈1)             | ellipse ✓ |
+| `D`   | knee          | +0.865             | 0.210                  | knee ✓ (between line and ellipse, as a bent curve should be) |
+
+All three land where they should: `R`'s near-zero aspect and near-1 correlation say "flat
+line"; `C`'s near-zero correlation and near-1 aspect say "round, 90°-shifted"; `D` sits
+between the two, consistent with a curve that's mostly one direction but bends. For `R`
+specifically, the measured `slope0` (0.59) landed within 2% of the value hand-coded in
+`signature_gen.ino` (`ii = 0.6f * v`), which is real evidence the whole chain — DAC → wire →
+ADC → sync-derived phase → calibration — preserves the intended relationship on actual
+hardware, not just in the simulated tests.
+
+**Still open:**
+- **Sync jitter is real, not zero.** `n_segments` came back ~160–167 for all three shapes,
+  where a clean curve should be closer to 2–4. Visually this shows up as small staircase
+  zigzags at the edges of an otherwise correct shape (see the saved figure from
+  `dual_board_signature_check.py`) — the shape is right, the fine detail isn't perfectly
+  smooth yet. Most likely cause: the un-atomic volatile reads below. Not investigated further
+  yet — the boxes below just say why, not "fixed."
+- The volatile reads in `signature_capture.ino` (`lastSyncUs`/`prevPeriodUs`) still aren't
+  interrupt-guarded (no `noInterrupts()`/atomic section) — plausible source of the jitter
+  above. Fine for this demo/bring-up tool, worth revisiting before trusting phase precision
+  for anything more demanding than "does the shape look right."
+- **A real quirk worth knowing, not a hardware fault:** opening a fresh connection to GEN or
+  CAP after they've been running a while doesn't reliably re-print the boot `#` meta line
+  (`A_nominal_v=...`), so `hardware/reader.py` needs `A=`/`Rr=` passed explicitly in that
+  case (its own docstring already documents this fallback). Also: opening a connection to an
+  ESP32 auto-resets it via DTR, and reading too soon after that (before ~2s) can show garbled
+  data mid-reboot — not a real fault, just needs a settle wait.
 
 ## Next steps
 
-1. Flash `signature_gen` to board #1, `signature_capture` to board #2, wire per the diagram
-   above (**don't forget GND**).
-2. `python3 hardware/reader.py --port <capture board's port> --verify` (drop `--loopback` —
-   the channels are real now, not aliased) to confirm a live capture reaches `verify()`.
-3. Compare captured signatures for each shape (`R`/`C`/`D`) against what you'd expect —
-   this is a plumbing check, not a physics one, so "looks like a line/ellipse/knee" is the
-   bar, not exact values.
+1. ~~Flash both boards, wire per the diagram, confirm each shape reads back correctly~~ —
+   done 2026-09-29, see the table above.
+2. Look at the jitter (`n_segments` ~160) more closely — plot a raw (non-calibrated) capture
+   and see whether it's the interrupt/volatile-read issue above or something else.
+3. When Dr. Wathis's real circuit is ready: unplug GEN, wire the real circuit + DUT (through
+   the confirmed drive stage and the still-unconfirmed return path) into CAP's same two ADC
+   pins + nothing on the sync pin (a real DUT has no sync signal — CAP's `havePeriod` logic
+   would need revisiting for that case, since it currently expects one).
