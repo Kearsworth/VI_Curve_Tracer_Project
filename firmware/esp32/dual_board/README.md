@@ -126,7 +126,27 @@ hardware, not just in the simulated tests.
    done 2026-09-29, see the table above.
 2. Look at the jitter (`n_segments` ~160) more closely — plot a raw (non-calibrated) capture
    and see whether it's the interrupt/volatile-read issue above or something else.
-3. When Dr. Wathis's real circuit is ready: unplug GEN, wire the real circuit + DUT (through
-   the confirmed drive stage and the still-unconfirmed return path) into CAP's same two ADC
-   pins + nothing on the sync pin (a real DUT has no sync signal — CAP's `havePeriod` logic
-   would need revisiting for that case, since it currently expects one).
+3. **Plan for the real-circuit swap (updated 2026-09-30 — supersedes the earlier note below):**
+   the drive is now planned as an **external voltage source / function generator**, not
+   GEN's DAC — it drives the DUT directly (through the confirmed drive stage and the
+   still-unconfirmed return path) while CAP only ever reads the analog response on its two
+   ADC pins, same as today. GEN is retired, not merged into CAP.
+   - **Sync, option A (try first):** if the generator has a **SYNC/TRIG OUT**, wire it
+     straight to CAP's GPIO27 — `onSync()`'s existing measured-period logic needs zero
+     changes. Check the actual output level first: most bench generators put out 5V TTL,
+     which exceeds the ESP32 GPIO's 3.3V max, so it needs a simple resistor voltage divider
+     (e.g. 10kΩ/20kΩ → ~3.33V) before touching GPIO27, not a direct connection.
+   - **Sync, option B (if no SYNC OUT exists):** wire the drive voltage `Vs` itself through
+     a voltage divider straight into GPIO27, **no firmware change needed** — the GPIO's own
+     ~1.6–1.7V logic threshold acts as a crude comparator, and since the interrupt is
+     already `RISING`-only, it naturally fires once per cycle (of the 2 physical
+     threshold-crossings per cycle) exactly like a real sync pulse would.
+   - **Known risk with option B:** a slowly-changing sine crossing that threshold can
+     "chatter" (multiple spurious interrupts per real crossing) if there's noise on the
+     line. Verify by counting interrupts/sec against the known drive frequency before
+     trusting a capture. If chatter shows up, add a real **comparator IC** (or an op-amp
+     wired as one) between `Vs` and GPIO27 instead of relying on the raw GPIO threshold.
+   - *(Original note, now superseded: this used to say "nothing on the sync pin" and treat
+     CAP's `havePeriod` logic as needing a rewrite for the real-DUT case — that assumed the
+     drive would disappear entirely. It doesn't: something must still tell CAP the phase,
+     which is exactly what options A/B above solve.)*
