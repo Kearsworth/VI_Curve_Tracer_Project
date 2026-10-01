@@ -18,15 +18,15 @@ Ordered roughly by priority. Check items off as they land.
       with a real sine drive, timed sampling, and phase-labeled framing — live capture matches
       expected sine shape (peak/trough land near phase ≈ π/2 and 3π/2 as expected).
 - [x] `hardware/reader.py`: read serial → counts→volts → build raw dict → hand to
-      `calibrate.calibrate()`. Written 2026-09-21 with `tests/test_reader.py` (simulated
-      Stage 3 frames: junk lines, jittery spacing, Stage 2 ADC offset). **Not yet run against
-      the live board.** Counts→volts is per-channel `ChannelCal`; the default is the ideal
-      formula, which is known to be off on this ESP32 (Stage 2), so `--loopback` re-centres
-      each channel on its own sine midpoint. That is loopback-only — the real circuit needs a
-      proper offset/gain sweep plus the ±10V→0–3.3V return-path gain (still unconfirmed).
-- [ ] Verify a full real capture flows through calibrate→features→verify without changes
-      to the ML code. (Mechanically verified on *simulated* frames; needs a real saved capture:
-      `python3 hardware/reader.py --port <port> --loopback --verify`.)
+      `calibrate.calibrate()`. Written 2026-09-21, **run against live hardware repeatedly
+      since 2026-09-29** (every two-board capture below goes through it). Counts→volts is
+      per-channel `ChannelCal`; the default is the ideal formula, which is known to be off on
+      this ESP32 (Stage 2), so `--loopback` re-centres each channel on its own sine midpoint.
+      That is loopback-only — the real circuit needs a proper offset/gain sweep plus the
+      ±10V→0–3.3V return-path gain (still unconfirmed).
+- [x] Verify a full real capture flows through calibrate→features→verify without changes
+      to the ML code. **Done 2026-09-29/30** via the two-board setup below — real captures,
+      zero ML-code changes, verdicts came back correctly for all three test shapes.
 - [x] **Two-board bring-up** (`firmware/esp32/dual_board/`, written 2026-09-26,
       **verified on real hardware 2026-09-29**): ESP32 #1 (`signature_gen`) fakes a V-I
       signature (line/ellipse/knee, shape selectable live over its own serial port) as a
@@ -41,8 +41,17 @@ Ordered roughly by priority. Check items off as they land.
       **Caveat:** sync-derived phase has visible jitter (`n_segments` ~160 vs. an expected
       ~2–4) — shapes are right, fine detail isn't perfectly smooth; likely the un-atomic
       volatile reads already flagged in the README, not yet fixed.
-      `hardware/dual_board_signature_check.py` (new) captures all three shapes and plots the
+      `hardware/dual_board_signature_check.py` captures all three shapes and plots the
       calibrated V-I loop side by side — rerun this after any firmware change to the pair.
+      `hardware/live_pipeline_demo.py` is the live version (both boards read continuously,
+      shape switchable with r/c/d keys, shows raw→calibrated→verdict updating in real time) —
+      used for the 2026-09-30 professor demo.
+- [ ] **Real-circuit sync plan (updated 2026-09-30, not yet tested):** the drive is now
+      planned as an external voltage source / function generator, not GEN's DAC — see
+      `dual_board/README.md` Next steps item 3 for the two sync options worked out (generator's
+      SYNC/TRIG OUT with a voltage divider, or Vs itself through a divider into GPIO27 reusing
+      the existing interrupt unchanged) and the comparator-IC fallback if chatter shows up.
+      Blocked on having the real generator + circuit in hand to test either option.
 
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2

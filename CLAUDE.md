@@ -15,14 +15,25 @@ it real data.
 
 ## 2. Current status (read this — it changes what is safe to assume)
 
+**Phase: A (hardware/software integration), late stage — see `docs/ROADMAP.md` for the
+full checklist. This section is a 60-second summary, not the source of truth; ROADMAP.md
+is.**
+
 - **ML pipeline: working** on **synthetic data**. Health (good/faulty) ≈ 97.8%,
   component-type ≈ 100% (only meaningful for good parts), anomaly detector ROC-AUC ≈ 0.87.
-- **Hardware (V-I tracer): in progress** — being tested by the advisor (Dr. Wathis).
-- **Right now** we test the data path with an **ADC↔DAC loopback** (ESP32 sends a
-  waveform out of the DAC and reads it straight back on the ADC, bypassing the real
-  circuit/DUT) so we can build the software before the hardware is ready.
-- **Not done yet:** real-hardware data capture, validation on real data, UI, ESP32
-  firmware for the real circuit, soft-fault improvements.
+- **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
+  (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
+  ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
+  `calibrate.py` → `features.py` → `verify.py` with **zero ML-code changes**. See
+  `firmware/esp32/dual_board/README.md` for the evidence table and `CONTEXT.md` for the
+  vocabulary (signature generator, capture unit, sync pulse).
+- **Top open problem right now:** the real circuit (Dr. Wathis's drive stage + DUT) isn't
+  wired in yet — the drive is now planned as an external voltage source, which breaks the
+  current sync mechanism unless one of two worked-out fallbacks is used. Not yet tested.
+  See `dual_board/README.md` Next steps item 3, and `docs/ROADMAP.md` Phase A.
+- **Not done yet:** connecting the real circuit (blocked on the above), UI, soft-fault
+  improvements. See `docs/ROADMAP.md` for the live task list — this file is a summary of it,
+  not a duplicate; when the two disagree, ROADMAP.md is right.
 
 ## 3. Architecture & data flow
 
@@ -59,10 +70,15 @@ vi_ml/            The ML pipeline (Python, run from inside this folder)
   plot_signatures.py  renders the 6-component good-vs-faulty figure
   models/         trained models land here (git-ignored)
 tests/            pytest tests that encode the invariants (run these after changes!)
-hardware/         reader.py — ESP32 serial frames → raw dict (counts→volts, whole cycles)
-firmware/esp32/   plan/spec for the ESP32 firmware (DAC out, ADC in, serial, loopback)
-docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks),
-                  LITERATURE.md (external check on the model-choice claims)
+hardware/         reader.py (serial frames → raw dict), live_pipeline_demo.py (live two-board
+                  dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py
+firmware/esp32/   loopback/ (single-board, verified) and dual_board/ (two-board, verified) —
+                  both implemented and run on real hardware, not just spec anymore
+CONTEXT.md        glossary for hardware terms (DUT, sense resistor, signature generator,
+                  capture unit, sync pulse, ...) — read before using these terms loosely
+docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks,
+                  the actual source of truth for status), LITERATURE.md (model-choice check),
+                  research/ (side investigations, not scheduled tasks)
 ```
 
 ## 5. How to run
@@ -124,10 +140,11 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
   those tests guard the invariants (shape, no NaN, C/L direction, accuracy floor).
 - Small, surgical changes. Don't refactor the pipeline structure without being asked.
 
-## 9. What we're working on next (see docs/ROADMAP.md for the full list)
+## 9. What we're working on next (docs/ROADMAP.md is the real list — this is a pointer, not a copy)
 
-1. ESP32 firmware: DAC drive + 2-channel ADC read + serial framing + loopback mode.
-2. `hardware/reader.py` (written; needs real-data check): read serial → convert to physical units → raw dict → calibrate.
+1. Connect the real circuit: needs the sync-plan fallback tested (dual_board/README.md item 3)
+   once the real voltage source + drive stage + DUT are available.
+2. ADC decision experiment (internal vs. external) — not yet run.
 3. Validate the trained model on real captured data; retrain/fine-tune as needed.
 4. Soft-fault features (reverse-leakage slope, ESR tilt, knee sharpness) + a confidence
    "review band".
@@ -135,6 +152,12 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 
 ## 10. Pointers
 
+- `CONTEXT.md` — glossary for hardware vocabulary (DUT, drive node, signature generator,
+  capture unit, sync pulse, ...). Read before using these terms loosely in new docs/code.
+- `firmware/esp32/dual_board/README.md` — the two-board bring-up: wiring, phase-sync design,
+  what's verified vs. still open (the real-circuit sync plan lives here, not in ROADMAP.md).
+- `docs/research/` — side investigations (e.g. serial-capture performance) that are
+  deliberately *not* roadmap tasks; read before re-investigating the same thing.
 - `docs/DESIGN.md` — the reasoning behind every decision above (why 360, why RF, etc.).
 - `docs/DATA_CONTRACT.md` — exact input/output formats (raw dict, signature, features, verdict, serial frame).
 - `docs/ROADMAP.md` — concrete next tasks.

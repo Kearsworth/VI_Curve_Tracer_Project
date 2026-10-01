@@ -57,6 +57,26 @@ green (passing-tests) step so you can always roll back.
 - Keep `CLAUDE.md` short; push detail into `docs/`. If `CLAUDE.md` grows huge, Claude wastes
   context re-reading it.
 
+### 6a. The sync ritual (context window management)
+
+Adopted 2026-10-01, based on Matt Pocock's Plan/Execute/Clear loop. `docs/ROADMAP.md` is the
+single source of truth for status; `CLAUDE.md` §2/§9 only summarize and point to it — never
+duplicate detail into both, or they drift apart.
+
+**Trigger:** context window hits ~60%, *or* a `docs/ROADMAP.md` checkbox just got closed —
+whichever comes first.
+
+**On trigger, silently:**
+1. Update `docs/ROADMAP.md` checkboxes/notes to match reality.
+2. Update `CLAUDE.md` §2 to a short summary (phase, what's new, top open problem) that points
+   to ROADMAP.md rather than restating it.
+3. If a new architecture/decision emerged, make sure it lands in `CONTEXT.md` or the relevant
+   `docs/` file — not inlined into `CLAUDE.md`.
+
+**Only at the ~60% context trigger, say out loud:** "synced ROADMAP.md/CLAUDE.md, safe to
+`/clear` or `/compact` whenever you want." Never suggest clearing itself — that stays the
+user's call, since it's not reversible.
+
 ## 7. Verify claims — don't trust numbers blindly
 
 If Claude says "accuracy improved," ask it to **show the command and its output**. Prefer

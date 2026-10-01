@@ -94,9 +94,9 @@ def main():
     ax_scroll.grid(alpha=.3)
 
     rawvi_line, = ax_rawvi.plot([], [], linewidth=1.2, marker=".", markersize=3, alpha=.7)
-    ax_rawvi.set_title("CAP: raw V vs I (before calibrate.py)")
-    ax_rawvi.set_xlabel("I (volts, raw)")
-    ax_rawvi.set_ylabel("V (volts, raw)")
+    ax_rawvi.set_title("CAP: raw I vs V (before calibrate.py)")
+    ax_rawvi.set_xlabel("V (volts, raw)")
+    ax_rawvi.set_ylabel("I (volts, raw)")
     ax_rawvi.set_xlim(0, 3.3)
     ax_rawvi.set_ylim(0, 3.3)
     ax_rawvi.set_aspect("equal", adjustable="box")
@@ -178,7 +178,7 @@ def main():
                 line_v.set_data(xs, volts_v)
                 line_i.set_data(xs, volts_i)
                 ax_scroll.set_xlim(max(0, n - args.window), n)
-                rawvi_line.set_data(volts_i, volts_v)   # x=I, y=V, per this panel's own labels
+                rawvi_line.set_data(volts_v, volts_i)   # x=V, y=I, per this panel's own labels
 
             if n % args.refresh_lines == 0:
                 try:
