@@ -27,10 +27,17 @@ is.**
   `calibrate.py` → `features.py` → `verify.py` with **zero ML-code changes**. See
   `firmware/esp32/dual_board/README.md` for the evidence table and `CONTEXT.md` for the
   vocabulary (signature generator, capture unit, sync pulse).
-- **Top open problem right now:** the real circuit (Dr. Wathis's drive stage + DUT) isn't
-  wired in yet — the drive is now planned as an external voltage source, which breaks the
-  current sync mechanism unless one of two worked-out fallbacks is used. Not yet tested.
-  See `dual_board/README.md` Next steps item 3, and `docs/ROADMAP.md` Phase A.
+- **Top open problem right now (updated 2026-10-04):** the drive is back to the ESP32's own
+  DAC — not an external voltage source as the 2026-09-30 note said — through the confirmed
+  0–3.3V→±10V drive stage. Per Dr. Wathis: split the ESP32 into **two FreeRTOS cores**, one
+  driving the DAC sine, the other reading both ADC channels and streaming. Because it's one
+  chip again, the inter-board sync-pulse problem is **gone** — both cores share the same
+  hardware clock, so phase comes from elapsed time against one shared cycle-start timestamp,
+  same principle the single-board loopback already used. The two-board `dual_board/` setup
+  and the external-generator sync plan are **retired** — see `dual_board/README.md`. The real
+  blocker now: the **return path** (±10V DUT response → 0–3.3V for the ADC) is still
+  unconfirmed. See `firmware/esp32/README.md` "Dual-core single-board plan" and
+  `docs/ROADMAP.md` Phase A.
 - **Not done yet:** connecting the real circuit (blocked on the above), UI, soft-fault
   improvements. See `docs/ROADMAP.md` for the live task list — this file is a summary of it,
   not a duplicate; when the two disagree, ROADMAP.md is right.
@@ -139,6 +146,9 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 - When you change `calibrate.py` or `features.py`, **run `pytest` before finishing** —
   those tests guard the invariants (shape, no NaN, C/L direction, accuracy floor).
 - Small, surgical changes. Don't refactor the pipeline structure without being asked.
+- This project doesn't use Gmail, Google Calendar, or Google Drive. Even if those MCP
+  connector tools are available in the session (they're account-level, not project-scoped),
+  don't invoke them for anything in this repo.
 
 ## 9. What we're working on next (docs/ROADMAP.md is the real list — this is a pointer, not a copy)
 

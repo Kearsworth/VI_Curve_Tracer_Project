@@ -138,6 +138,11 @@ def main():
 
     fig.canvas.mpl_connect("key_press_event", on_key)
 
+    fig.show()                  # force the window to actually open now, before any
+    for _ in range(5):          # blocking cap.readline() call gets a chance to stall it
+        fig.canvas.flush_events()
+        time.sleep(0.05)
+
     print(f"GEN={args.gen_port}  CAP={args.cap_port}  shape={state['shape']}")
     print("click the plot window, then: r/c/d=shape  space=pause  ,/.=speed  q=quit")
 
