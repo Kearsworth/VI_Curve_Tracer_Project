@@ -15,6 +15,8 @@ the phase comes straight from the firmware's `phase_rad` column (drive phase, no
 Usage (from repo root):
     python3 hardware/reader.py --port /dev/cu.usbserial-XXXX --loopback --verify
     python3 hardware/reader.py --file capture.csv --loopback
+    python3 hardware/reader.py --port /dev/cu.usbserial-XXXX --frontend --rr 1000 --verify
+        (standalone front end, docs/STANDALONE_TESTER_PLAN.md: adc_v = node A, adc_i = node B)
 """
 import argparse
 import os
@@ -142,6 +144,46 @@ def _whole_cycle_slice(phase):
     return slice(wraps[0], wraps[-1])
 
 
+@dataclass(frozen=True)
+class FrontEnd:
+    """
+    Standalone front end (docs/STANDALONE_TESTER_PLAN.md, Stage 0-verified values). Each ADC
+    pin sees its node through  node -r_in- pin,  pin -r_up- v_supply,  pin -r_dn- GND,  so
+        pin = gain * node + offset.
+    The same network loads node B: a Thevenin source v_th behind r_th, which adds a current
+    that must be subtracted from V_B/Rr (up to ~100 % error at Rr = 100 kOhm otherwise).
+    Replace the nominal resistor values with measured ones once the board exists.
+    """
+    r_in: float = 100e3
+    r_up: float = 56e3
+    r_dn: float = 56e3
+    v_supply: float = 3.3
+
+    @property
+    def gain(self):
+        return (1 / self.r_in) / (1 / self.r_in + 1 / self.r_up + 1 / self.r_dn)
+
+    @property
+    def offset(self):
+        return self.v_supply * (1 / self.r_up) / (1 / self.r_in + 1 / self.r_up + 1 / self.r_dn)
+
+    @property
+    def v_th(self):
+        return self.v_supply * self.r_dn / (self.r_up + self.r_dn)
+
+    @property
+    def r_th(self):
+        return self.r_in + self.r_up * self.r_dn / (self.r_up + self.r_dn)
+
+    def node_from_pin(self, v_pin):
+        return (np.asarray(v_pin, float) - self.offset) / self.gain
+
+    def dut(self, v_pin_a, v_pin_b, rr):
+        """Pin voltages at node A / node B -> (V across DUT, current through DUT)."""
+        va, vb = self.node_from_pin(v_pin_a), self.node_from_pin(v_pin_b)
+        return va - vb, vb / rr + (vb - self.v_th) / self.r_th
+
+
 # ----------------------------------------------------------------------------------------
 # Capture -> raw dict
 # ----------------------------------------------------------------------------------------
@@ -183,6 +225,28 @@ def capture_to_raw(cap, A=None, Rr=None, cal_v=None, cal_i=None, loopback=False)
     }
 
 
+def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=FrontEnd()):
+    """
+    Raw dict for the standalone front end: adc_v = node A pin, adc_i = node B pin.
+    Rr defaults to the meta line's `Rr_ohm_placeholder` (Stage 1 picks Rr with a jumper, so
+    pass the value actually plugged in). A defaults to the MEASURED drive amplitude — half
+    the 1st-99th percentile span of node A — which is what calibrate() should normalise by.
+    """
+    Rr = cap.meta.get("Rr_ohm_placeholder") if Rr is None else Rr
+    if Rr is None:
+        raise ValueError("Rr is unknown: pass Rr= (the sense resistor actually connected).")
+    sl = _whole_cycle_slice(cap.phase)
+    vref = cap.meta.get("vref", ADC_VREF_DEFAULT)
+    absolute = ChannelCal(0.0, vref / ADC_MAX)          # pin volts, not centred
+    pin_a = (cal_a or absolute).to_volts(cap.adc_v[sl])
+    pin_b = (cal_b or absolute).to_volts(cap.adc_i[sl])
+    v, i = fe.dut(pin_a, pin_b, Rr)
+    if A is None:
+        lo, hi = np.percentile(fe.node_from_pin(pin_a), [1, 99])
+        A = (hi - lo) / 2
+    return {"v": v, "i": i, "phase": cap.phase[sl], "A": float(A), "Rr": float(Rr)}
+
+
 # ----------------------------------------------------------------------------------------
 # sources: file and serial
 # ----------------------------------------------------------------------------------------
@@ -199,7 +263,7 @@ def _serial_lines(ser, deadline):
             yield line
 
 
-def read_capture(port, baud=BAUD, n_cycles=4, timeout_s=15.0, **raw_kwargs):
+def read_capture(port, baud=BAUD, n_cycles=4, timeout_s=15.0, frontend=False, **raw_kwargs):
     """
     Open `port`, read `n_cycles` full drive cycles, return the raw dict.
     Opening the port normally resets an ESP32 devkit, so the `# ...` settings line arrives
@@ -212,7 +276,7 @@ def read_capture(port, baud=BAUD, n_cycles=4, timeout_s=15.0, **raw_kwargs):
 
     with serial.Serial(port, baud, timeout=1.0) as ser:
         cap = parse_capture(_serial_lines(ser, time.monotonic() + timeout_s), max_cycles=n_cycles)
-    return capture_to_raw(cap, **raw_kwargs)
+    return frontend_to_raw(cap, **raw_kwargs) if frontend else capture_to_raw(cap, **raw_kwargs)
 
 
 # ----------------------------------------------------------------------------------------
@@ -224,17 +288,21 @@ def main(argv=None):
     src.add_argument("--port", help="serial port, e.g. /dev/cu.usbserial-0001")
     src.add_argument("--file", help="saved capture text file")
     ap.add_argument("--cycles", type=int, default=4, help="full drive cycles to read (default 4)")
-    ap.add_argument("--loopback", action="store_true", help="centre channels on their sine midpoint")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--loopback", action="store_true", help="centre channels on their sine midpoint")
+    mode.add_argument("--frontend", action="store_true", help="standalone front end: adc_v = node A, adc_i = node B")
+    ap.add_argument("--rr", type=float, help="sense resistor actually connected, ohms (--frontend)")
     ap.add_argument("--verify", action="store_true", help="run calibrate->features->verify on the capture")
     args = ap.parse_args(argv)
 
+    kw = dict(Rr=args.rr) if args.frontend else dict(loopback=args.loopback)
     if args.port:
-        raw = read_capture(args.port, n_cycles=args.cycles, loopback=args.loopback)
+        raw = read_capture(args.port, n_cycles=args.cycles, frontend=args.frontend, **kw)
     else:
         cap = load_capture(args.file, max_cycles=args.cycles)
         if cap.n_bad_lines:
             print(f"skipped {cap.n_bad_lines} malformed line(s)")
-        raw = capture_to_raw(cap, loopback=args.loopback)
+        raw = frontend_to_raw(cap, **kw) if args.frontend else capture_to_raw(cap, **kw)
 
     print(f"samples: {len(raw['v'])}   A={raw['A']:.4f} V   Rr={raw['Rr']:g} ohm")
     print(f"v range: {raw['v'].min():+.3f} .. {raw['v'].max():+.3f} V   "

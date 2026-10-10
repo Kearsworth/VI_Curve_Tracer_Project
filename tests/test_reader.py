@@ -105,3 +105,48 @@ def test_loopback_capture_flows_through_pipeline_unchanged():
     assert abs(sig[:, 0].max()) < 1.2                  # ~1 after v/A normalisation
     x = features.extract(sig)
     assert x.shape == (12,) and np.isfinite(x).all()
+
+
+# ---- standalone front end (docs/STANDALONE_TESTER_PLAN.md) -------------------------------
+def frontend_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600):
+    """Pins as the Stage 1 board would produce them for a resistor DUT, loading included."""
+    fe = reader.FrontEnd()
+    lines = ["# stage1_frontend ready", "# A_nominal_v=4.98 Rr_ohm_placeholder=1000 vref=3.30",
+             "index,t_us,phase_rad,adc_v_counts,adc_i_counts"]
+    g_rp = 1 / fe.r_th
+    for k in range(n):
+        ph = (k * 2 * np.pi * 3 / n) % (2 * np.pi)            # 3 cycles
+        va = a * np.sin(ph)
+        # KCL at node B: (va - vb)/R = vb/Rr + (vb - v_th)/r_th
+        vb = (va / r_dut + fe.v_th * g_rp) / (1 / r_dut + 1 / rr + g_rp)
+        pa, pb = fe.gain * va + fe.offset, fe.gain * vb + fe.offset
+        ca, cb = (int(round(p / 3.3 * reader.ADC_MAX)) for p in (pa, pb))
+        lines.append(f"{k},{k * 333},{ph:.4f},{ca},{cb}")
+    return lines
+
+
+def test_frontend_values_match_stage0_design():
+    fe = reader.FrontEnd()
+    assert fe.gain == pytest.approx(0.219, abs=1e-3)
+    assert fe.offset == pytest.approx(1.289, abs=1e-3)
+    assert fe.r_th == pytest.approx(128e3)
+
+
+@pytest.mark.parametrize("rr", [220.0, 1000.0, 10000.0, 100000.0])
+def test_frontend_recovers_dut_current_with_loading_correction(rr):
+    r_dut = 1000.0
+    fe = reader.FrontEnd()
+    raw = reader.frontend_to_raw(reader.parse_capture(frontend_lines(r_dut, rr)), Rr=rr)
+    # exact (unquantised) DUT current from the same KCL the fake board used
+    va = 5.0 * np.sin(raw["phase"])
+    vb = (va / r_dut + fe.v_th / fe.r_th) / (1 / r_dut + 1 / rr + 1 / fe.r_th)
+    i_exact = (va - vb) / r_dut
+    lsb_node = 3.3 / reader.ADC_MAX / fe.gain                 # one ADC count, referred to the node
+    assert np.max(np.abs(raw["i"] - i_exact)) < 1.5 * lsb_node * (1 / rr + 1 / fe.r_th) + 1e-12
+    # without the loading correction the error would be far larger at high Rr
+    naive = fe.node_from_pin(fe.gain * vb + fe.offset) / rr
+    assert np.max(np.abs(naive - i_exact)) > np.max(np.abs(raw["i"] - i_exact))
+    assert raw["A"] == pytest.approx(5.0, rel=0.02)
+    assert raw["Rr"] == rr
+    sig = calibrate.calibrate(raw)
+    assert sig.shape == (360, 2) and np.isfinite(features.extract(sig)).all()
