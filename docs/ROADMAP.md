@@ -69,6 +69,12 @@ Ordered roughly by priority. Check items off as they land.
       fallback if chatter) — see `dual_board/README.md` Next steps item 3 for the superseded
       detail, kept for the record.~~
 
+- [ ] **Standalone tester plan (drafted 2026-10-10; Stage 0 simulation passed same day, not built yet):** our own
+      USB-powered front end — ±5 V drive (MT3608 + ICL7660S rails, NE5532), ESP32-selected Rr
+      bank (220 Ω / 1 kΩ / 10 kΩ / 100 kΩ via relays), 50/200/1000 Hz, DMA capture, then ML
+      retrained for selectable settings + auto-range. Stages 0–5 and BOM in
+      `docs/STANDALONE_TESTER_PLAN.md`. Needs Dr. Wathis's OK since it runs alongside his ±10 V stage.
+
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
