@@ -41,11 +41,25 @@ V_DUT = V_A − V_B,  I = V_B / Rr
 Design notes:
 - DUT stays ground-referenced (same topology as the advisor's stage), so the existing
   2-channel frame, `reader.py` and the ML pipeline carry over.
-- **Rr switching uses relays, not CD4066.** On ±9 V rails a CD4066's logic-high threshold is
-  ~3.6 V above VSS-relative ground, which a 3.3 V ESP32 pin can't reach without level shifting;
-  relays also add ~0 Ω (an analog switch adds ~100 Ω that would need calibrating). A
-  low-cost 4-channel relay module (or reed relays + transistors) is enough; switching speed
-  doesn't matter between captures.
+- **Rr switching: one 5 V reed relay per resistor, each driven by an NPN transistor from an
+  ESP32 GPIO** (decided 2026-10-10). Why not the alternatives:
+  - CD4066 on ±9 V rails needs a logic-high ~3.6 V above ground (70 % of the 18 V span from
+    VSS), which a 3.3 V GPIO can't reach without level shifting, and adds ~100 Ω on-resistance.
+  - Common 5 V relay *modules* are usually active-LOW with the opto LED pulled to 5 V: a 3.3 V
+    GPIO "high" leaves ~1.7 V across the LED, so the relay may not release. Only usable if the
+    module explicitly supports 3.3 V / high-level trigger.
+  - Reed relay (e.g. SIP-1A05): ~10 mA coil, contacts ~0.1 Ω, sealed — suited to small signals;
+    GPIO → 1 kΩ → NPN base, coil to 5 V, 1N4148 flyback diode across each coil.
+  - GPIOs: **16, 17, 18, 19** (output-capable, not strapping pins, not ADC1/DAC pins).
+  - Firmware rule: break-before-make — all relays off, wait ~5 ms, then the new one on; never
+    two at once. With none on, node B just floats to the return-path bias (harmless).
+  - Stage 1 can start with a jumper wire in place of the relays; the relays only make it
+    software-selectable.
+- **Auto-range rule (Stage 3, recorded now):** capture at 1 kΩ, estimate |Z| = V_DUT,pk / I_pk,
+  pick the bank value nearest |Z| on a log scale, never with Rr/|Z| > 20 (Stage 0 showed those
+  signatures degenerate). Diode/LED-like signatures (low `symmetry`) stay at 1 kΩ. Every
+  capture records the Rr actually used (`raw['Rr']`), measured with a multimeter once, not the
+  nominal value.
 - Drive: DAC sine 128 ± 104 counts (levelled so A = 5.0 V), 1 µF AC coupling + 100 kΩ to GND
   (τ = 0.1 s, settles ~0.5 s after power-up), non-inverting gain 1 + 27k/10k = 3.7.
 - Return path per channel: Vin–100 kΩ–node, node–56 kΩ–3.3 V, node–56 kΩ–GND, 1 nF at the
@@ -137,7 +151,7 @@ Design notes:
 | MT3608 boost module | 1 | 5 V → +9 V |
 | ICL7660**S** (DIP-8) | 1 | +9 V → −9 V (the S version accepts up to 12 V in) |
 | NE5532P | 1–2 | Drive amplifier, ±5 V out (TL072 is weaker at 20+ mA loads) |
-| 4-channel relay module (3.3 V-compatible input) or 4 reed relays + NPN transistors | 1 | ESP32-selected Rr |
+| 5 V reed relay (SIP-1A05 or similar) + NPN (2N2222A/BC547) + 1 kΩ base resistor + 1N4148 flyback, per Rr | 4 sets | ESP32-selected Rr (GPIO 16–19) |
 | Resistors (5 % is fine — calibrated in software): 220 Ω, 1 kΩ, 10 kΩ, 100 kΩ (Rr bank); 10 k + 27 k (gain); 100 k ×3 (input bias + return paths), 56 k ×4 (return paths) | — | Gain, Rr, return path |
 | Capacitors: 10 µF ×3 (charge pump + rail bulk), 1 µF film/ceramic ×1 (coupling), 100 nF ×6, 1 nF ×2 | — | Charge pump, coupling, decoupling, ADC pin |
 | Test DUTs: 1 k / 10 k resistors, 1N4148, red LED, 100 nF film cap, 100 mH inductor | — | Validation |
