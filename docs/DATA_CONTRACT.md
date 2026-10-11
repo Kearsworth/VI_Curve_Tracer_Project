@@ -102,6 +102,12 @@ from `index` alone. `adc_i_counts` currently reads the same physical pin as `adc
 (no real sense resistor exists yet in the loopback setup) — that's expected at this stage, not
 a data quality issue.
 
+**Dual-core variant** (`firmware/esp32/dual_core/dual_core_loopback`, 2026-10-09): same five
+fields, but `index` is printed modulo 10000 and `t_us` modulo 100000 µs (meta keys
+`index_wrap`, `t_us_wrap`, `sample_period_us`) to keep every line ≤ 28 bytes so 921600 baud
+never saturates. Nothing downstream uses either field except to spot dropped samples, which
+still works on the wrapped difference. `phase_rad` is unaffected (always 0..2π).
+
 PC side (`hardware/reader.py`, implemented) skips `#` lines, the header, and malformed rows
 (e.g. a half-received first line), keeps only whole drive cycles (first phase wrap → last
 phase wrap), converts counts → volts through a per-channel `ChannelCal(offset, gain)`, computes

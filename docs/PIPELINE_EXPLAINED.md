@@ -88,6 +88,34 @@ in the raw dict) to reconstruct the effective ± signal before computing the
 V-I loop. See `firmware/esp32/README.md` → "Things to decide when
 implementing" for where this gets decided in Stage 3.
 
+## 3c. ADC pins, measurement points, and the sense resistor
+*Asked: 2026-10-04*
+
+**Q:** Do two channels mean two pins, where do they connect, and does the
+sense resistor's value affect the signature?
+
+**A:** Two single-ended ESP32 ADC channels normally use two ADC input pins
+plus a shared ground. Each pin measures relative to ground; voltage
+**across** a component is the difference between its two terminal voltages.
+For a conceptual series circuit `drive P → DUT → Q → Rr → ground`,
+measuring P and Q gives `V_DUT = V_P - V_Q` and `I = V_Q / Rr`.
+Alternatively, analog difference amplifiers can provide separate conditioned
+DUT-voltage and sense-voltage outputs to the two ADC pins. Actual wiring
+depends on the advisor's circuit, including gain, offset, and ADC input limits;
+the conceptual circuit is not a direct ESP32 wiring instruction.
+
+The actual resistance in ohms is required for conversion to amperes and is
+stored as `raw['Rr']`. Tolerance and power rating also matter. Larger Rr
+limits current more and changes voltage division; smaller Rr permits more
+current but can make the sense voltage harder to resolve. Changing Rr can
+therefore change the captured signature. Current normalization
+`v_n = v/A`, `i_n = i*Rr/A` does not make arbitrary Rr changes equivalent:
+even for a resistor DUT, normalized slope is `Rr/R_DUT`. Use known,
+validated capture settings for good references and test parts; validate or
+retrain across additional resistor ranges before relying on predictions.
+Current sensing and signal conditioning background:
+[Analog Devices CN0560](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/CN0560.html).
+
 ## 4. Why loopback (DAC → ADC directly, Stage 2 you're on now)
 
 Right now the real circuit (sense resistor, DUT socket, signal

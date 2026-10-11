@@ -46,12 +46,28 @@ Ordered roughly by priority. Check items off as they land.
       `hardware/live_pipeline_demo.py` is the live version (both boards read continuously,
       shape switchable with r/c/d keys, shows raw→calibrated→verdict updating in real time) —
       used for the 2026-09-30 professor demo.
-- [ ] **Real-circuit sync plan (updated 2026-09-30, not yet tested):** the drive is now
-      planned as an external voltage source / function generator, not GEN's DAC — see
-      `dual_board/README.md` Next steps item 3 for the two sync options worked out (generator's
-      SYNC/TRIG OUT with a voltage divider, or Vs itself through a divider into GPIO27 reusing
-      the existing interrupt unchanged) and the comparator-IC fallback if chatter shows up.
-      Blocked on having the real generator + circuit in hand to test either option.
+- [ ] **Dual-core single-board bring-up (updated 2026-10-04, supersedes the external-generator
+      sync plan — not yet tested):** per Dr. Wathis, the drive goes back to the ESP32's own DAC
+      (through the confirmed ±10V drive stage), not an external source — so the two-board setup
+      and its sync-pulse problem are retired. New plan: one ESP32, two FreeRTOS tasks pinned
+      one per core (`xTaskCreatePinnedToCore`) — Core A drives the DAC sine from a LUT (reusing
+      `loopback/sine_capture.ino`'s approach), Core B reads both ADC channels and streams CSV,
+      same frame format as today (zero `hardware/reader.py` changes). No sync wire needed: both
+      cores share one hardware clock, so phase comes from elapsed time since one shared `t0us`,
+      exactly like the single-board loopback already does — just parallelized so blocking
+      `analogRead()`/`Serial` on the capture side can't jitter the drive timing. See
+      `firmware/esp32/README.md` "Dual-core single-board plan" for the full design.
+      Step 1 (dual-core loopback, `firmware/esp32/dual_core/dual_core_loopback/`) written and
+      **verified on hardware 2026-10-09** (core split works, ~65 samples/cycle, V/I corr
+      0.9993 on two real pins — numbers in `firmware/esp32/README.md`). Logic analyzer then found
+      UART saturation causing ~1.6 ms sample holes; fixed the same day (bounded line length +
+      fixed 333 µs sample grid → 0 dropped samples). Steps 2–4 remain.
+      **Blocked on:** the **return path** circuit (±10V→0–3.3V) — still unconfirmed, and now
+      required (no more external-generator detour around it).
+      ~~Old plan, retired 2026-10-04: external voltage source/function generator driving the
+      DUT directly with a sync pulse into GPIO27 (two options worked out, comparator-IC
+      fallback if chatter) — see `dual_board/README.md` Next steps item 3 for the superseded
+      detail, kept for the record.~~
 
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2

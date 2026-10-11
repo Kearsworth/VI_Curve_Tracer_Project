@@ -69,13 +69,113 @@ Concrete decisions made (previously open below):
   currently aliased to the same pin as `ADC_V_PIN` (no real sense resistor exists yet); wiring
   it to a real second channel is meant to be a one-line change once the circuit exists.
 
-## Two-board bring-up (parallel path, while the return path is unconfirmed)
+## Two-board bring-up — RETIRED 2026-10-04
 
-See `dual_board/README.md` — a second bring-up path, alongside the loopback above, that
-splits signature generation and capture across two ESP32 boards. Not a replacement for the
-loopback or a shortcut around the return-path question below; it's a way to exercise the
-*capture* path (real 2-channel ADC, inter-board sync, serial framing, `hardware/reader.py`)
-on real hardware bytes before the real circuit exists.
+See `dual_board/README.md` — a bring-up path, alongside the loopback above, that split
+signature generation and capture across two ESP32 boards while the drive was planned as an
+external voltage source. **Superseded**: per Dr. Wathis the drive goes back to the ESP32's own
+DAC, so there's one board again — see "Dual-core single-board plan" below. Kept for the
+record; the capture-unit code and the phase-from-known-reference reasoning both carry over.
+
+## Dual-core single-board plan (current plan, replaces the two-board/external-generator path)
+
+**Why:** the drive is the ESP32's own DAC again (through the confirmed 0–3.3V→±10V drive
+stage below), not an external source — so the inter-board sync-pulse problem from
+`dual_board/` doesn't exist to begin with. Per Dr. Wathis: split the one ESP32's two cores so
+drive and capture don't block each other — one core generates the sine, the other reads the
+ADC and streams. Not yet implemented or tested; this section is the design to build against.
+
+```
+                     ESP32 (single chip, two FreeRTOS tasks, one per core)
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │  Core A — driveTask                     Core B — captureTask          │
+   │  - LUT sine, same approach as           - analogRead() GPIO34 (V)     │
+   │    loopback/sine_capture.ino            - analogRead() GPIO35 (I)     │
+   │  - dacWrite(DAC_PIN, ...) on a          - phase_rad from elapsed      │
+   │    fixed cadence                          time since shared t0us      │
+   │  - writes t0us ONCE at the start,       - Serial.printf CSV line      │
+   │    before captureTask reads it            (same frame as today)      │
+   └───────────────────┬──────────────────────────────┬───────────────────┘
+                        │ DAC (GPIO25)                 │ ADC (GPIO34/35)
+                        ▼                               ▲
+                 drive stage (confirmed)          return path (UNCONFIRMED)
+                 0–3.3V → ±10V                     ±10V → 0–3.3V
+                        │                               │
+                        └──────────► DUT + Rr ──────────┘
+```
+
+**No sync wire, on purpose.** `micros()`/`esp_timer_get_time()` on the ESP32 is one hardware
+timer shared by both cores, not a per-core counter — so Core B can compute
+`phase_rad = 2π · f · (t − t0us)` from the *same* clock Core A used to generate the sine,
+without either core sending the other anything mid-run. This is the same "phase from a known
+reference, never from geometry" rule (CLAUDE.md design decision #2) the single-board loopback
+already relies on — splitting onto two cores doesn't change that, it only stops a slow
+`analogRead()`/`Serial.printf()` on the capture side from stalling the drive task's timing
+(and vice versa), which is the actual reason to split cores here, not phase derivation.
+
+**Shared state, kept deliberately tiny:**
+- `t0us` (`volatile uint32_t` or `esp_timer_get_time()`-based): written once by whichever task
+  starts first, read-only after — no mutex needed for a single-writer-then-many-readers value.
+- `DRIVE_FREQ_HZ`: a compile-time constant, not shared state at all.
+- Optionally a boolean/semaphore `driveRunning` so captureTask doesn't log the first few
+  samples before driveTask's first `dacWrite()` actually lands — a few ms of skip, not a
+  correctness issue, but worth doing cleanly rather than ignoring.
+
+**Build on top of what's proven, don't rewrite it:**
+- Reuse `loopback/sine_capture.ino`'s LUT + `DAC_CENTER`/`DAC_AMPLITUDE_COUNTS` constants for
+  driveTask — that sine generation is already verified on hardware (Stage 3 above).
+- Reuse the same CSV frame (`index,t_us,phase_rad,adc_v_counts,adc_i_counts`) and meta line for
+  captureTask — zero `hardware/reader.py` changes, same golden rule as every capture path so far.
+- `xTaskCreatePinnedToCore()` for both tasks (Arduino's own `setup()/loop()` already runs
+  pinned to core 1 by default on this board; put driveTask on the other core explicitly rather
+  than relying on that default).
+
+**Rollout order (mirrors the existing Stage 1/2/3 bring-up style):**
+1. **Dual-core loopback first:** same jumper wire as Stage 2/3 (DAC25→ADC34 directly, no real
+   circuit), just split across the two tasks/cores. Confirms the core split itself doesn't
+   break anything, against the already-known-good single-core result, before any new circuit
+   variable is introduced.
+   — **Written and verified on hardware 2026-10-09:** `dual_core/dual_core_loopback/`.
+   Boot meta shows `drive_core=0 capture_core=1`; ~65 samples/cycle at 50 Hz (dt median
+   307 µs, p99 327 µs, one 1.6 ms outlier in 8.4k samples); V vs I correlation 0.9993 on two
+   real pins; V fits `sin(phase)` with a ~1.7° lag (≈ half a 200 µs LUT step — expected
+   quantisation, not clock drift). The `--verify` verdict (`D`/FAULTY) is meaningless for a
+   loopback line (no DUT; DAC/ADC nonlinearity bends it) and is not a pass criterion.
+   **Logic-analyzer check (same day, WeAct FX2 LA on TX0, sigrok-cli 24 MHz, UART decode
+   clean):** the UART is the bottleneck, not `analogRead()` — the TX line is busy **98%** of
+   the time. After ~15 min uptime a line is ~34 bytes (`index`/`t_us` have grown to 7 and 9
+   digits) = ~372 µs on the wire, but the core samples every ~312 µs, so the TX buffer fills
+   → **~1.6 ms holes in `t_us`, ~2–3 per drive cycle** (11 in 83 ms). Every hole lines up
+   with a ~150–205 µs *idle* gap on the wire, so the writer isn't just blocked per-byte: it
+   looks like it's only woken once the buffer is drained, the 128-byte HW FIFO then takes
+   ~1.39 ms to empty + ~0.2 ms to sample/format = 1.6 ms (fits, not proven). Compare
+   1 in 8.4k samples right after boot when lines were ~29 bytes. Phase labels stay correct
+   (time-based), so calibrate.py just interpolates over the holes — fine for bring-up, but the
+   sample rate silently degrades with uptime. Fix later with shorter/binary frames or
+   decimation (CP2102 tops out at 921600); folds into the 1 kHz / DMA ROADMAP item.
+   **Fixed same day:** `index` now wraps at 10000 and `t_us` at 100000 (both bounded → max
+   line 28 bytes ≈ 304 µs), and capture runs on a fixed 333 µs grid (≈60 samples/cycle, UART
+   ≤ ~91% busy). Re-measured over USB serial: 15,595 lines in 5 s, **0 dropped samples**,
+   `t_us` step median 333 / max 339 µs; `reader.py --verify` unchanged. **Logic analyzer
+   re-check:** 248 lines in 83 ms, 0 dropped, max line 28 bytes, TX busy 89% (was 98%), longest
+   idle on the wire 68 µs (was ~200 µs at every hole), wire line period median 333 µs.
+   Jumper GPIO25 → both GPIO34 and GPIO35 (two real ADC pins, same node). Drive task busy-loops
+   on core 0 with the core-0 idle watchdog disabled (no WiFi/BT used); capture stays in
+   `loop()` on core 1. Pass check: `python3 hardware/reader.py --port <port> --loopback`
+   gives the same clean sine/line as `sine_capture` did.
+2. **Wire in the confirmed drive stage** (0–3.3V→±10V) between DAC and DUT.
+3. **Build/confirm the return path** (±10V→0–3.3V) — this is the actual blocking item now,
+   not sync. Nothing past step 1 is safe to run on real ±10V without it (ADC absolute max is
+   3.3V).
+4. Re-run `hardware/dual_board_signature_check.py`-style validation (correlation/aspect ratio
+   checks) against a real DUT once steps 2–3 are done, then fold into
+   `hardware/live_pipeline_demo.py`.
+
+**Carries over unchanged from the single-board loopback section above:** the DAC/ADC
+nonlinearity-needs-calibration finding, the "measured `A`" distinction (§ ROADMAP "Measured A
++ amplitude leveling" — now sourced from the return-path-converted drive-node voltage, not the
+DAC's nominal volts), and the 1kHz-drive / DMA-ADC roadmap item (still open, independent of
+this core split).
 
 ## Confirmed analog front-end: 0–3.3V ↔ ±10V level shifter
 *Confirmed with Dr. Wathis's circuit, 2026-09-15 — drive side only, see caveat below.*
