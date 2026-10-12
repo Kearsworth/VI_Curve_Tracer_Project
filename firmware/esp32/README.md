@@ -177,6 +177,16 @@ nonlinearity-needs-calibration finding, the "measured `A`" distinction (§ ROADM
 DAC's nominal volts), and the 1kHz-drive / DMA-ADC roadmap item (still open, independent of
 this core split).
 
+**V→I sampling skew (`loopback/adc_timing/`) — written 2026-10-12, not yet run on hardware:**
+`loop()` reads V then I with two blocking `analogRead()` calls, so I is sampled ~one read
+later than V, which shows up as a fake phase shift `skew_deg = 360 × gap_us / period_us`
+(50 Hz: `gap × 0.018°`; 1 kHz: `gap × 0.36°`). The sketch measures the gap two ways: averaged
+`esp_timer_get_time()` around each read (timer-call overhead subtracted), and a GPIO23 marker
+that is HIGH during the V read, for the logic analyzer
+(`sigrok-cli -d fx2lafw --config samplerate=24m --samples 2400000 --channels D0 -o adc_timing.sr`).
+Same loopback jumpers as above. Record the measured gap here once run — it decides whether
+the 1 kHz item needs simultaneous sampling (or a software I-phase correction) or not.
+
 ## Confirmed analog front-end: 0–3.3V ↔ ±10V level shifter
 *Confirmed with Dr. Wathis's circuit, 2026-09-15 — drive side only, see caveat below.*
 
