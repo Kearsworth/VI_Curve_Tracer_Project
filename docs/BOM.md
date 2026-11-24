@@ -71,6 +71,11 @@ ESP32 DAC ──/\/\──●───────────────┐   
                                           (rail decoupling)
 ```
 
+> ⚠ **This sketch is simplified and wrong as drawn** (found 2026-11-25): with V_REF wired
+> straight to `+`, the output sits at **+1.65 V DC**, not 0 V. Build the full difference amp
+> from §2 instead (V_REF → 10 k → `+`, and `+` → 51 k + 10 k → GND), plus a second return-path
+> channel. Hole-by-hole wiring: `docs/CASE1_WIRING.md`.
+
 (OPA4134PA is quad: use 1 channel for the drive amp, 1 for the V_REF buffer, and 1 for the
 ±10 V→0–3.3 V **return path** amp in section 5. Confirm channel pin numbers in the OPA4134
 datasheet before wiring.)

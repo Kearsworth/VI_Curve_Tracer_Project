@@ -77,6 +77,12 @@ Ordered roughly by priority. Check items off as they land.
       **2026-11-25: not being built** — the physical build is Case 1 (his ±10 V stage with
       OPA4134PA + DD1718PA ±15 V, `docs/BOM.md`); this stays as the ±5 V alternative.
 
+- [ ] **Case 1 breadboard build (planned 2026-11-25, not built yet):** hole-by-hole wiring and
+      7-step power-up checks in `docs/CASE1_WIRING.md` (layout netlist-checked by
+      `hardware/sim/make_case1_breadboard.py`). Software ready but untested on hardware:
+      `firmware/esp32/case1/case1_frontend` (inverted LUT, A ≈ 5 V default) and
+      `reader.FrontEnd.case1()` (picked from the meta line). Needs 100 kΩ ×2, 22 kΩ ×4, 1 nF ×2
+      on top of `docs/BOM.md`.
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also

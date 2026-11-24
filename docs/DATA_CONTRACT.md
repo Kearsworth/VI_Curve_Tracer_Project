@@ -92,7 +92,9 @@ Preceded once at boot by comment lines (prefixed `#`, skip when parsing) carryin
 settings: `drive_freq_hz`, `lut_size`, `dac_center`, `dac_amplitude_counts`, `A_nominal_v`
 (nominal/uncalibrated drive amplitude — see Stage 2's measured offset/gain note in
 `firmware/esp32/README.md`), `Rr_ohm_placeholder` (loopback has no real sense resistor yet),
-`vref`, `dac_bits`, `adc_bits`, `baud`.
+`vref`, `dac_bits`, `adc_bits`, `baud`. Case 1 firmware (`firmware/esp32/case1/case1_frontend`)
+also sends `frontend_case=1` and `dac_inverted=1`; `reader.py` uses `frontend_case` to pick
+`FrontEnd.case1()` (followers + 100k/22k/22k dividers, no loading term) over the Stage 1 default.
 
 `t_us` was added on top of the originally proposed `index,adc_ch_v,adc_ch_i` shape because
 Stage 3 samples free-running (no fixed-interval timer) — `phase_rad` is computed firmware-side

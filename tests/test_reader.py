@@ -150,3 +150,63 @@ def test_frontend_recovers_dut_current_with_loading_correction(rr):
     assert raw["Rr"] == rr
     sig = calibrate.calibrate(raw)
     assert sig.shape == (360, 2) and np.isfinite(features.extract(sig)).all()
+
+
+# ---- Case 1 front end (docs/CASE1_WIRING.md): followers, 100k/22k/22k dividers -----------
+def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True):
+    """Pins as the Case 1 board would produce them: followers, so node B is NOT loaded."""
+    fe = reader.FrontEnd.case1()
+    key = " frontend_case=1" if meta_key else ""
+    lines = ["# case1_frontend ready", f"# A_nominal_v=4.97 Rr_ohm_placeholder=1000 vref=3.30{key}",
+             "index,t_us,phase_rad,adc_v_counts,adc_i_counts"]
+    for k in range(n):
+        ph = (k * 2 * np.pi * 3 / n) % (2 * np.pi)
+        va = a * np.sin(ph)
+        vb = va * rr / (r_dut + rr)                      # plain divider: no loading term
+        ca, cb = (int(round((fe.gain * v + fe.offset) / 3.3 * reader.ADC_MAX)) for v in (va, vb))
+        lines.append(f"{k},{k * 333},{ph:.4f},{ca},{cb}")
+    return lines
+
+
+def test_case1_values_match_wiring_doc():
+    fe = reader.FrontEnd.case1()
+    assert fe.buffered
+    assert fe.gain == pytest.approx(0.0991, abs=1e-4)      # docs/CASE1_WIRING.md §7 step 6
+    assert fe.offset == pytest.approx(1.486, abs=1e-3)
+    # +-13.5 V (op-amp saturation) must stay inside the ADC's 0..3.3 V
+    assert 0 < fe.gain * -13.5 + fe.offset and fe.gain * 13.5 + fe.offset < 3.3
+
+
+def test_front_end_is_picked_from_meta_line():
+    assert reader.FrontEnd.from_meta(reader.parse_capture(case1_lines()).meta) == reader.FrontEnd.case1()
+    assert reader.FrontEnd.from_meta(reader.parse_capture(frontend_lines()).meta) == reader.FrontEnd()
+
+
+@pytest.mark.parametrize("rr", [1000.0, 10000.0, 100000.0])
+def test_case1_recovers_dut_current_without_loading_term(rr):
+    r_dut = 1000.0
+    fe = reader.FrontEnd.case1()
+    raw = reader.frontend_to_raw(reader.parse_capture(case1_lines(r_dut, rr)), Rr=rr)
+    va = 5.0 * np.sin(raw["phase"])
+    i_exact = va / (r_dut + rr)
+    lsb_node = 3.3 / reader.ADC_MAX / fe.gain
+    assert np.max(np.abs(raw["i"] - i_exact)) < 1.5 * lsb_node / rr + 1e-12
+    assert np.max(np.abs(raw["v"] - i_exact * r_dut)) < 3 * lsb_node
+    assert raw["A"] == pytest.approx(5.0, rel=0.02)
+    # the Stage 1 constants on Case 1 data would be badly wrong
+    wrong = reader.frontend_to_raw(reader.parse_capture(case1_lines(r_dut, rr)), Rr=rr, fe=reader.FrontEnd())
+    assert np.max(np.abs(wrong["i"] - i_exact)) > 10 * np.max(np.abs(raw["i"] - i_exact))
+    sig = calibrate.calibrate(raw)
+    assert sig.shape == (360, 2) and np.isfinite(features.extract(sig)).all()
+
+
+def test_case1_cli_override_without_meta_key(tmp_path, capsys):
+    path = tmp_path / "cap.txt"
+    path.write_text("\n".join(case1_lines(meta_key=False)) + "\n")
+    import re
+    reader.main(["--file", str(path), "--frontend", "--rr", "1000", "--fe", "case1"])
+    a_case1 = float(re.search(r"A=([\d.]+) V", capsys.readouterr().out).group(1))
+    assert a_case1 == pytest.approx(5.0, rel=0.02)
+    reader.main(["--file", str(path), "--frontend", "--rr", "1000"])   # no key -> Stage 1 constants
+    a_stage1 = float(re.search(r"A=([\d.]+) V", capsys.readouterr().out).group(1))
+    assert abs(a_stage1 - 5.0) > 0.5
