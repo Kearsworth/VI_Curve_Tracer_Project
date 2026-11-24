@@ -1,5 +1,10 @@
 # Standalone tester plan (drafted 2026-10-10)
 
+> **Status update 2026-11-25: alternative, not being built.** This is the ±5 V front end
+> (NE5532 + MT3608/ICL7660S ±9 V rails). The physical build went the **Case 1** way instead:
+> Dr. Wathis's ±10 V drive stage with an OPA4134PA on DD1718PA ±15 V rails — see
+> `docs/BOM.md`. Keep this file as the ±5 V option; don't mix its BOM with Case 1's.
+
 Goal: a **real-use, standalone** V-I tester. One USB 5 V cable powers everything, the
 ESP32 drives the DUT itself, and the test settings (sense resistor Rr, drive frequency,
 amplitude) are selectable by the ESP32 — the same idea as commercial analog signature

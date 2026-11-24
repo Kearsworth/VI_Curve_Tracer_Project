@@ -74,6 +74,8 @@ Ordered roughly by priority. Check items off as they land.
       bank (220 Ω / 1 kΩ / 10 kΩ / 100 kΩ via relays), 50/200/1000 Hz, DMA capture, then ML
       retrained for selectable settings + auto-range. Stages 0–5 and BOM in
       `docs/STANDALONE_TESTER_PLAN.md`. Needs Dr. Wathis's OK since it runs alongside his ±10 V stage.
+      **2026-11-25: not being built** — the physical build is Case 1 (his ±10 V stage with
+      OPA4134PA + DD1718PA ±15 V, `docs/BOM.md`); this stays as the ±5 V alternative.
 
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
@@ -92,6 +94,13 @@ Ordered roughly by priority. Check items off as they land.
       precision resistor. Fall back to a difference amp across Rr only if the numbers demand it.
 
 ## Phase B — Real data & validation
+- [ ] **Retrain `synth.py` at A = 10 V** (added 2026-11-25) before trusting D/LED/Zener
+      verdicts from the Case 1 ±10 V front end (`docs/BOM.md`). `calibrate.py` divides V by
+      A, so a ~0.6 V diode knee lands at 0.6/5 = 0.12 in training but 0.6/10 = 0.06 at ±10 V:
+      a different normalised shape, i.e. out-of-distribution. R, C, L scale with A and are
+      unaffected. Today `synth.py` uses A = 5 for R/C/L/D/LED and A = 6 for Zener. Either
+      switch to A = 10 or add A = 10 alongside the existing A, then rerun `pytest` (the
+      accuracy-floor test retrains the models). Reasoning: `docs/BOM.md` §5.
 - [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
       good and (deliberately created) faulty.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.

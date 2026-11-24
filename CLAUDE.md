@@ -38,6 +38,12 @@ is.**
   blocker now: the **return path** (±10V DUT response → 0–3.3V for the ADC) is still
   unconfirmed. See `firmware/esp32/README.md` "Dual-core single-board plan" and
   `docs/ROADMAP.md` Phase A.
+- **Front end being built (decided 2026-11-25): Case 1** — Dr. Wathis's 0–3.3V→±10V drive
+  stage, rebuilt with an **OPA4134PA** (quad op-amp: drive, V_REF buffer, return path) on
+  ±15V rails from a **DD1718PA** module. Parts, gain values and wiring cautions:
+  `docs/BOM.md`. The ±5V NE5532 design in `docs/STANDALONE_TESTER_PLAN.md` is the unbuilt
+  alternative — don't mix the two BOMs. At ±10V the model is out-of-distribution for
+  D/LED/Zener until `synth.py` is retrained at A=10 (`docs/BOM.md` §5, ROADMAP Phase B).
 - **Not done yet:** connecting the real circuit (blocked on the above), UI, soft-fault
   improvements. See `docs/ROADMAP.md` for the live task list — this file is a summary of it,
   not a duplicate; when the two disagree, ROADMAP.md is right.
