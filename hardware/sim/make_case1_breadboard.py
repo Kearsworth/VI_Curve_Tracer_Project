@@ -78,17 +78,17 @@ PARTS = [
     # --- channels C/D: unity followers (FET input: no load on node A/B)
     ("W10", "wire", ("g", 25), ("g", 26), "pin 9 ↔ pin 8 (follower C)", "gray", "BUF_A", "BUF_A"),
     ("W11", "wire", ("g", 21), ("g", 20), "pin 13 ↔ pin 14 (follower D)", "gray", "BUF_B", "BUF_B"),
-    # --- return path A: BUF_A -> 100k -> P1, P1 -22k- 3V3, P1 -22k- GND, 1 nF; P1 -> GPIO34
+    # --- return path A: BUF_A -> 100k -> P1, P1 -22k- 3V3, P1 -22k- GND, 1 nF (100 pF until it arrives); P1 -> GPIO34
     ("R9", "res", ("h", 26), ("h", 30), "100 kΩ OUT C (pin 8) → P1", "100k", "BUF_A", "P1"),
     ("R10", "res", ("g", 33), ("g", 30), "22 kΩ 3V3 → P1", "22k", "3V3", "P1"),
     ("R11", "res", ("i", 30), ("TRg", 30), "22 kΩ P1 → GND", "22k", "P1", "GND"),
-    ("C5", "cap", ("j", 30), ("TRg", 31), "1 nF P1 → GND", "1nF", "P1", "GND"),
+    ("C5", "cap", ("j", 30), ("TRg", 31), "1 nF P1 → GND (ตอนนี้ 100 pF — ค่าเดียวกับ C6)", "100pF", "P1", "GND"),
     # --- return path B: BUF_B -> 100k -> P2, same divider; P2 -> GPIO35
     ("W12", "wire", ("i", 33), ("j", 13), "3V3 → row 13 บน", "orange", "3V3", "3V3"),
     ("R12", "res", ("h", 20), ("h", 16), "100 kΩ OUT D (pin 14) → P2", "100k", "BUF_B", "P2"),
     ("R13", "res", ("g", 13), ("g", 16), "22 kΩ 3V3 → P2", "22k", "3V3", "P2"),
     ("R14", "res", ("i", 16), ("TRg", 16), "22 kΩ P2 → GND", "22k", "P2", "GND"),
-    ("C6", "cap", ("j", 16), ("TRg", 17), "1 nF P2 → GND", "1nF", "P2", "GND"),
+    ("C6", "cap", ("j", 16), ("TRg", 17), "1 nF P2 → GND (ตอนนี้ 100 pF — ค่าเดียวกับ C5)", "100pF", "P2", "GND"),
 ]
 
 # Wires that leave the board: (hole, text, net). GPIO34/35 go in LAST (docs/CASE1_WIRING.md step 6).

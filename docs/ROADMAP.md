@@ -82,7 +82,8 @@ Ordered roughly by priority. Check items off as they land.
       `hardware/sim/make_case1_breadboard.py`). Software ready but untested on hardware:
       `firmware/esp32/case1/case1_frontend` (inverted LUT, A ≈ 5 V default) and
       `reader.FrontEnd.case1()` (picked from the meta line). Needs 100 kΩ ×2, 22 kΩ ×4, 1 nF ×2
-      on top of `docs/BOM.md`.
+      on top of `docs/BOM.md` (1 nF ordered 2026-11-25; C5/C6 use 100 pF until it arrives —
+      noise check in `docs/CASE1_WIRING.md` step 6).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
