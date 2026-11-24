@@ -39,10 +39,16 @@ is.**
   unconfirmed. See `firmware/esp32/README.md` "Dual-core single-board plan" and
   `docs/ROADMAP.md` Phase A.
 - **Front end being built (decided 2026-11-25): Case 1** — Dr. Wathis's 0–3.3V→±10V drive
-  stage, rebuilt with an **OPA4134PA** (quad op-amp: drive, V_REF buffer, return path) on
-  ±15V rails from a **DD1718PA** module. Parts, gain values and wiring cautions:
-  `docs/BOM.md`. The ±5V NE5532 design in `docs/STANDALONE_TESTER_PLAN.md` is the unbuilt
-  alternative — don't mix the two BOMs. At ±10V the model is out-of-distribution for
+  stage, rebuilt with an **OPA4134PA** (4 channels: A drive ×6.1 difference amp, B V_REF
+  buffer, C/D followers on node A/B for the return path) on ±15V rails from a **DD1718PA**.
+  Parts and why: `docs/BOM.md` (its §4 sketch is wrong as drawn — see the note there).
+  **Hole-by-hole wiring + 7-step power-up checks: `docs/CASE1_WIRING.md`** (layout generated
+  and netlist-checked by `hardware/sim/make_case1_breadboard.py`). Software for it:
+  `firmware/esp32/case1/case1_frontend` (inverted LUT, A ≈ 5V default) and
+  `reader.FrontEnd.case1()`, auto-picked from the meta line's `frontend_case=1`. **Status
+  2026-11-25: planned, not built; software untested on hardware; C5/C6 are 100 pF until the
+  ordered 1 nF arrive.** The ±5V NE5532 design in `docs/STANDALONE_TESTER_PLAN.md` is the
+  unbuilt alternative — don't mix the two BOMs. At ±10V the model is out-of-distribution for
   D/LED/Zener until `synth.py` is retrained at A=10 (`docs/BOM.md` §5, ROADMAP Phase B).
 - **Not done yet:** connecting the real circuit (blocked on the above), UI, soft-fault
   improvements. See `docs/ROADMAP.md` for the live task list — this file is a summary of it,
@@ -86,7 +92,8 @@ tests/            pytest tests that encode the invariants (run these after chang
 hardware/         reader.py (serial frames → raw dict), live_pipeline_demo.py (live two-board
                   dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py
 firmware/esp32/   loopback/ (single-board, verified) and dual_board/ (two-board, verified) —
-                  both implemented and run on real hardware, not just spec anymore
+                  both implemented and run on real hardware, not just spec anymore;
+                  case1/case1_frontend (Case 1 front end, compiles, not yet on hardware)
 CONTEXT.md        glossary for hardware terms (DUT, sense resistor, signature generator,
                   capture unit, sync pulse, ...) — read before using these terms loosely
 docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks,
@@ -158,8 +165,9 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 
 ## 9. What we're working on next (docs/ROADMAP.md is the real list — this is a pointer, not a copy)
 
-1. Connect the real circuit: needs the sync-plan fallback tested (dual_board/README.md item 3)
-   once the real voltage source + drive stage + DUT are available.
+1. Build the Case 1 front end on breadboard step by step per `docs/CASE1_WIRING.md`, then
+   capture real R/D signatures with `case1_frontend` (the sync-plan item that used to be here
+   is retired — see `dual_board/README.md`).
 2. ADC decision experiment (internal vs. external) — not yet run.
 3. Validate the trained model on real captured data; retrain/fine-tune as needed.
 4. Soft-fault features (reverse-leakage slope, ESR tilt, knee sharpness) + a confidence
