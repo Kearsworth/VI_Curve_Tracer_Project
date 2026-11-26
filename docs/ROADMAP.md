@@ -121,7 +121,8 @@ Ordered roughly by priority. Check items off as they land.
       specifically on soft faults. Cheaper to try than new features; do this before or
       alongside the item below.
 - [ ] Add features targeting soft faults: reverse-leakage slope, ESR tilt / loss tangent,
-      diode knee sharpness.
+      diode knee sharpness. *Partly done 2026-11-27:* `off_slope` (reverse leakage) and
+      `on_res` (forward series R) in `features.py`; ESR tilt and knee sharpness still open.
 - [ ] Add a confidence "review band" (e.g. predict_proba in 0.4–0.6 ⇒ flag for human
       review) to catch the low-confidence misses.
 - [ ] Consider a reference-comparison (RMS-distance) path to catch parametric value drift

@@ -42,12 +42,17 @@ signature = np.ndarray  # shape (360, 2), dtype float
 
 ## 3. Feature vector (output of features.py)
 
-`extract(signature) -> np.ndarray` of shape (12,), order given by `features.FEATURE_NAMES`:
+`extract(signature) -> np.ndarray` of shape (14,), order given by `features.FEATURE_NAMES`:
 
 ```
 signed_area, abs_area, slope0, phaseVI, aspect, knee_V,
-symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio
+symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio,
+off_slope, on_res          # added 2026-11-27 (soft faults)
 ```
+
+off_slope = dI/dV on the blocking side at low current (junction leakage; ~0 when healthy);
+on_res = dV/dI on the conducting side past the knee (series resistance of a degraded
+diode/LED). Both use the side that conducts more, so a reversed part still works.
 
 Meaning (short): signed_area = loop area with sign (rotation ⇒ C vs L); abs_area = size;
 slope0 = dI/dV at origin (conductance); phaseVI = V–I phase angle (deg); aspect = minor/major

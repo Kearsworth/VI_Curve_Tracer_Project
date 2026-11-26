@@ -32,7 +32,7 @@ import features
 MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models')
 
 
-def build_xy(n_good=150, n_faulty=150, seed=0):
+def build_xy(n_good=300, n_faulty=300, seed=0):   # 300: wider value/fault variety since 2026-11-27
     """สร้างข้อมูล -> calibrate -> features. คืน X, ป้ายชนิด, ป้ายสุขภาพ"""
     data = synth.make_dataset(n_good=n_good, n_faulty=n_faulty, seed=seed)
     X, comp, health = [], [], []

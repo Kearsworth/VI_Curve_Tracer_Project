@@ -104,7 +104,7 @@ def test_loopback_capture_flows_through_pipeline_unchanged():
     assert np.allclose(sig[:, 0], sig[:, 1])           # V == I*Rr/... (Rr=1, shared pin)
     assert abs(sig[:, 0].max()) < 1.2                  # ~1 after v/A normalisation
     x = features.extract(sig)
-    assert x.shape == (12,) and np.isfinite(x).all()
+    assert x.shape == (len(features.FEATURE_NAMES),) and np.isfinite(x).all()
 
 
 # ---- standalone front end (docs/STANDALONE_TESTER_PLAN.md) -------------------------------

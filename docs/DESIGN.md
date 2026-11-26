@@ -88,10 +88,17 @@ axes independently.
 The 12 features (see `features.py`): `signed_area, abs_area, slope0, phaseVI, aspect,
 knee_V, symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio`.
 
+2026-11-27: two soft-fault features added (14 total), still physical: `off_slope` (dI/dV on
+the blocking side at low current = junction leakage) and `on_res` (dV/dI past the knee on the
+conducting side = series resistance). On the full-value-range synth they lifted Zener-leak
+recall from ~10% to ~85% and degraded-LED recall from ~20% to ~96%; `slope0` couldn't see
+either because its window around 0 V is dominated by the forward knee.
+
 ## Why faults are shape-changing (and drift is excluded)
 
 Detectable-from-shape faults change the loop: open, short, reversed, high ESR (cap),
-leakage (cap), high DCR / shorted turns (inductor), degraded/soft diode, Zener Vz shift.
+leakage (cap), high DCR / shorted turns (inductor), degraded/soft diode, Zener junction leakage
+(Zener Vz shift was dropped 2026-11-27: with Vz over a range it is value drift, see below).
 A small value drift on an otherwise healthy part does **not** change the shape class — from
 shape alone it looks like a healthy component of a different value. Catching parametric
 drift needs a **reference-comparison** path (compare against the golden signature for that

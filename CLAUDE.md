@@ -23,9 +23,10 @@ is.**
   the full value range (R 100 Ω–300 kΩ, C 1 nF–1000 µF, L 10 mH–10 H) with a simulated
   auto-range (drive frequency + Rr chosen so |Z|/Rr ≈ 1) and the measured Case 1 board
   imperfections (node noise/offset/quantization, ADC crosstalk, V-I skew, ADC spikes, 40–60
-  points/cycle). On that harder data: health ≈ 95%, type ≈ 100% (good parts), anomaly ROC-AUC
-  ≈ 0.79. The older one-value model (97.8% on its own data) scores ≈ 75% on it, mostly by
-  calling good parts of other values FAULTY. First real-board check (50 Hz firmware): 4/4
+  points/cycle). On that harder data with the 14 features: health ≈ 97–98% (good parts called
+  GOOD 99%), type ≈ 100% (good parts), anomaly ROC-AUC ≈ 0.81. The older one-value model
+  (97.8% on its own data) scores ≈ 75% on it, mostly by calling good parts of other values
+  FAULTY. First real-board check (50 Hz firmware): 4/4
   good-resistor captures → GOOD, 1/1 open socket → FAULTY. A 1 kHz DMA firmware
   (`firmware/esp32/case1/case1_frontend_1k`, 2026-11-27) also reads a 1k resistor as GOOD, with
   the V-I phase error down from 2.4° to ~0.4° (`docs/CASE1_WIRING.md`, ADC step 2).
@@ -74,7 +75,7 @@ is.**
    signature  (360 × 2 array)
         │  features.py    → 12 interpretable geometric/electrical features
         ▼
-   feature vector (12,)
+   feature vector (14,)
         │  train.py (offline)  → fits Random Forest + Isolation Forest, saves to models/
         │  verify.py (online)  → loads models, predicts
         ▼
@@ -90,7 +91,7 @@ inference time. If you change one, it must stay identical for both, or predictio
 vi_ml/            The ML pipeline (Python, run from inside this folder)
   synth.py        Generates synthetic signatures for 6 components (good + faulty)
   calibrate.py    raw dict → 360-point normalized signature   (Periodic Resampling)
-  features.py     signature → 12-feature vector
+  features.py     signature → 14-feature vector
   train.py        build dataset → train 3 models → save to models/*.joblib
   verify.py       load models → verify(raw) → {type, verdict, confidence, anomaly}
   demo.py         end-to-end: train then verify a few fresh samples
@@ -149,16 +150,18 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
    "good" from shape alone; catching that needs a reference-comparison path — roadmap).
 6. **Type prediction is only meaningful when verdict = GOOD.** A shorted/open part
    looks like "short/open", not like its original type. This is expected, not a bug.
-7. **12 features, not 720 raw points.** Interpretable + works with little data. (A CNN
-   could consume raw points later; that's a separate roadmap item.)
+7. **14 interpretable features, not 720 raw points.** Interpretable + works with little data.
+   12 original + 2 soft-fault features added 2026-11-27 with the owner's OK: `off_slope`
+   (blocking-side dI/dV → junction leakage) and `on_res` (conducting-side dV/dI past the knee →
+   degraded diode/LED). (A CNN could consume raw points later; separate roadmap item.)
 
 ## 7. Known limitations (state these honestly; don't hide them)
 
 - All numbers are on **synthetic data**; real hardware will differ — must re-validate.
-- **Soft faults are the weak spot** (2026-11-27 synth): Zener leak ~10% and LED degraded
-  ~20–80% recall (unstable run to run) — the 12 features have no reverse-region slope or
-  forward-slope measure; leaky cap, shorted turns, degraded diode ~92–93%; hard faults ~100%.
-  Improving these is a roadmap item (soft-fault features).
+- **Soft faults are the weak spot** (2026-11-27 synth, 14 features): shorted turns ~81%,
+  reversed Zener ~83% (the type-agnostic health model confuses it with a good LED — a per-type
+  health model would fix it once the user states the part type), Zener leak ~85%, reversed
+  diode ~90%, leaky cap ~92%; degraded diode/LED ~96–97%; hard faults ~100%.
 - **"Any value" assumes auto-ranging hardware that doesn't exist yet:** synth picks the drive
   frequency from 1 Hz–1 kHz and Rr from 220 Ω/1k/10k/100k (`synth.TEST_FREQS_HZ`,
   `RR_OPTIONS`). The board today has 1k/10k/100k by jumper and one drive frequency per
