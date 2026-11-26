@@ -79,7 +79,10 @@ HW = dict(
     amp_err=0.02,                # σ ความคลาดของ A ที่วัดได้
     samples_per_cycle=(40, 60),
     cycles=(8, 24),
-    rate_drift=0.002,            # อัตราสุ่มตัวอย่างไม่ลงตัวกับรอบ -> เฟสไหลช้า ๆ เติม bin
+    locked_prob=0.8,             # บอร์ดจริงสุ่มตัวอย่างล็อกกับเฟส: 50 จุด/รอบ ตกที่เฟสเดิมทุกรอบ (วัด 2026-11-27:
+                                 # 1 kHz เติม 50 จาก 360 bin, 50 Hz เติม 58) -> ส่วนใหญ่ไม่มี drift
+    rate_drift=0.002,            # ที่เหลือ: อัตราสุ่มไม่ลงตัวกับรอบ -> เฟสไหลช้า ๆ เติม bin
+    jitter_deg=0.3,              # σ ความคลาดเวลาสุ่มตัวอย่างแต่ละจุด (timestamp jitter ~1.4 µs ที่ 1 kHz)
     spike_rate=(0.0, 0.01),      # สัดส่วนจุดที่ ADC กระโดด (วัดจริง ~0.5% ของจุดเกิน 5σ)
     spike_counts=(40.0, 110.0),  # ขนาด spike (วัดจริงสูงสุด ~70–100 count)
 )
@@ -163,9 +166,9 @@ def _linear_ideal(comp, fault, rng, A, g):
     f0, _ = auto_range(lambda f: _z_linear(comp, p, f))
     if comp == 'C':
         x0 = 1.0 / (2 * np.pi * f0 * value)
-        p['esr'] = x0 * _loguniform(rng, 1e-3, 0.03)           # ของดี: ESR เล็กมาก
+        p['esr'] = x0 * _loguniform(rng, 1e-3, 0.06)           # ของดี: DF ≤ 6% (เซรามิก class II วัดจริงได้ ~4–5%)
         if fault == 'esr':
-            p['esr'] = x0 * rng.uniform(0.1, 0.75)
+            p['esr'] = x0 * rng.uniform(0.12, 0.75)
         elif fault == 'leak':
             p['rleak'] = x0 * rng.uniform(1.25, 12.5)
     elif comp == 'L':
@@ -262,13 +265,16 @@ def generate_sample(component, health, rng, n_raw=None, n_cycles=None):
         n_cycles = int(rng.integers(hw['cycles'][0], hw['cycles'][1] + 1))
     if n_raw is None:
         n_raw = n_cycles * int(rng.integers(hw['samples_per_cycle'][0], hw['samples_per_cycle'][1] + 1))
-    drift = 1.0 + rng.uniform(-hw['rate_drift'], hw['rate_drift'])
-    drive_phase = (2 * np.pi * n_cycles * drift / n_raw) * np.arange(n_raw)   # เฟสที่ "รู้" จากนาฬิกา
+    locked = rng.random() < hw['locked_prob']
+    drift = 1.0 if locked else 1.0 + rng.uniform(-hw['rate_drift'], hw['rate_drift'])
+    start = rng.uniform(0, 2 * np.pi)                     # เฟสของจุดแรกไม่แน่นอน
+    drive_phase = start + (2 * np.pi * n_cycles * drift / n_raw) * np.arange(n_raw)   # เฟสที่ "รู้" จากนาฬิกา
     deg = np.pi / 180
     off = rng.uniform(-hw['phase_offset_deg'], hw['phase_offset_deg']) * deg
     skew = rng.normal(0, hw['skew_deg']) * deg
-    qa = (drive_phase + off) % (2 * np.pi)
-    qb = (drive_phase + off + skew) % (2 * np.pi)
+    jit = rng.normal(0, hw['jitter_deg'] * deg, n_raw)
+    qa = (drive_phase + off + jit) % (2 * np.pi)
+    qb = (drive_phase + off + jit + skew) % (2 * np.pi)
 
     a = np.interp(qa, g, node_a, period=2 * np.pi)
     b = np.interp(qb, g, node_b, period=2 * np.pi)

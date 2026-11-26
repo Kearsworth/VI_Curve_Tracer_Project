@@ -23,15 +23,17 @@ is.**
   the full value range (R 100 Ω–300 kΩ, C 1 nF–1000 µF, L 10 mH–10 H) with a simulated
   auto-range (drive frequency + Rr chosen so |Z|/Rr ≈ 1) and the measured Case 1 board
   imperfections (node noise/offset/quantization, ADC crosstalk, V-I skew, ADC spikes, 40–60
-  points/cycle). On that harder data with the 14 features: health ≈ 97–98% (good parts called
-  GOOD 99%), type ≈ 100% (good parts), anomaly ROC-AUC ≈ 0.81. The older one-value model
+  points/cycle, phase-locked sampling like the real board). On that harder data with the 14
+  features: health ≈ 98% (good parts called GOOD 99.5%), type ≈ 100% (good parts), anomaly
+  ROC-AUC ≈ 0.83. The older one-value model
   (97.8% on its own data) scores ≈ 75% on it, mostly by calling good parts of other values
   FAULTY. First real-board check (50 Hz firmware): 4/4
   good-resistor captures → GOOD, 1/1 open socket → FAULTY. A 1 kHz DMA firmware
   (`firmware/esp32/case1/case1_frontend_1k`, 2026-11-27) also reads a 1k resistor as GOOD, with
   the V-I phase error down from 2.4° to ~0.4° and ADC crosstalk from ~4 % to ~0.1 %; with
   per-channel divider gains, zero-cal and phase labels aligned to node A, a 988 Ω resistor
-  (meter) reads 988.8 Ω and verifies GOOD (`docs/CASE1_WIRING.md`, ADC step 2).
+  (meter) reads 988.8 Ω and verifies GOOD, and the first real capacitor (0.1 µF ceramic, Rr 1k)
+  reads 97.3 nF and verifies C / GOOD (`docs/CASE1_WIRING.md`, ADC step 2).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
@@ -160,10 +162,11 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 ## 7. Known limitations (state these honestly; don't hide them)
 
 - All numbers are on **synthetic data**; real hardware will differ — must re-validate.
-- **Soft faults are the weak spot** (2026-11-27 synth, 14 features): shorted turns ~81%,
-  reversed Zener ~83% (the type-agnostic health model confuses it with a good LED — a per-type
-  health model would fix it once the user states the part type), Zener leak ~85%, reversed
-  diode ~90%, leaky cap ~92%; degraded diode/LED ~96–97%; hard faults ~100%.
+- **Soft faults are the weak spot** (2026-11-27 synth, 14 features): high-ESR cap ~82%,
+  shorted turns ~83%, Zener leak ~85%, leaky cap ~93%, degraded diode/LED and reversed diode
+  ~95–96%; hard faults ~100%. "Good" C allows DF up to 6% (class-II ceramics measured ~4–5%);
+  healthy aluminium electrolytics can reach DF 10–20%, which this synth would call high-ESR —
+  ESR limits really depend on the capacitor type (needs the reference/type path).
 - **"Any value" assumes auto-ranging hardware that doesn't exist yet:** synth picks the drive
   frequency from 1 Hz–1 kHz and Rr from 220 Ω/1k/10k/100k (`synth.TEST_FREQS_HZ`,
   `RR_OPTIONS`). The board today has 1k/10k/100k by jumper and one drive frequency per
