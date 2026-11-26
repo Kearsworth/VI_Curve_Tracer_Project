@@ -18,7 +18,10 @@ raw = {
 
 - `M` (number of raw samples) may vary between captures — that's fine, calibration fixes it.
 - `phase` comes from the drive signal (known from the frequency / SYNC), NOT estimated from
-  the loop geometry. In synth this is `omega * t`.
+  the loop geometry. In synth this is `omega * t`. For the front-end boards the reader then
+  shifts the labels by one constant so the measured drive node A reads `+A*sin(phase)`
+  (`reader.drive_phase_shift`): the firmware's clock-based labels carry a fixed timing offset
+  (~14° at 1 kHz, ~2.6° at 50 Hz, 2026-11-27), and node A is the drive itself.
 - `A` and `Rr` are needed for normalization and must travel with the capture.
 - `A` is the **measured** peak at the drive node, in the same real-volt units as `v` — not the
   DAC's nominal setting (the firmware's `A_nominal_v`). Since 2026-11-27 the synthetic data

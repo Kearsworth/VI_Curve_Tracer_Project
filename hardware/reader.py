@@ -80,6 +80,7 @@ class Capture:
     adc_v: np.ndarray = None
     adc_i: np.ndarray = None
     n_bad_lines: int = 0                          # malformed data lines that were skipped
+    n_dup_lines: int = 0                          # repeated/stale rows dropped (see parse_capture)
 
 
 def _parse_meta(line, meta):
@@ -112,22 +113,40 @@ def parse_capture(lines, max_cycles=None):
     malformed line (e.g. a half-received first line after opening the port) are skipped and
     counted in `n_bad_lines`. If `max_cycles` is set, stop reading as soon as that many
     FULL drive cycles have been seen (a cycle = one wrap of phase_rad back to ~0).
+
+    Rows whose index is not ahead of the previous row's are dropped (`n_dup_lines`): when the
+    PC reads too slowly the CP2102's buffer overflows and old 64-byte USB packets come through
+    again (seen 2026-11-27). Lost rows (index jumps forward) are kept. A meta or header line,
+    or 50 "stale" rows in a row, starts a new stream (the board was reset).
     """
     cap = Capture()
     rows, wraps, last_phase = [], 0, None
+    last_idx, stale_run = None, 0
     for line in lines:
         if isinstance(line, bytes):
             line = line.decode("ascii", errors="replace")
         line = line.strip()
         if not line or line.startswith("index"):
+            last_idx = None
             continue
         if line.startswith("#"):
             _parse_meta(line, cap.meta)
+            if "drive_freq_hz=" in line:
+                last_idx = None
             continue
         row = _parse_row(line)
         if row is None:
             cap.n_bad_lines += 1
             continue
+        if last_idx is not None:
+            wrap = int(cap.meta.get("index_wrap", 10000))
+            step = (row[0] - last_idx) % wrap
+            if (step == 0 or step > wrap // 2) and stale_run < 50:
+                stale_run += 1
+                cap.n_dup_lines += 1
+                continue
+        stale_run = 0
+        last_idx = row[0]
         rows.append(row)
         if last_phase is not None and last_phase - row[2] > np.pi:
             wraps += 1
@@ -167,48 +186,64 @@ class FrontEnd:
     buffered=True: a unity follower sits between each node and its divider (Case 1, ch C/D of
     the OPA4134), so the divider does not load node B and I = V_B / Rr exactly.
     """
-    r_in: float = 100e3
+    r_in: float = 100e3          # node-A divider (and node B's too, unless `b` is given)
     r_up: float = 56e3
     r_dn: float = 56e3
     v_supply: float = 3.3
     buffered: bool = False
+    b: tuple = None              # node-B divider (r_in, r_up, r_dn) when it differs from node A's
 
     @classmethod
     def case1(cls):
-        """Case 1 board (docs/CASE1_WIRING.md): followers + 100k/20k/20k dividers.
+        """Case 1 board (docs/CASE1_WIRING.md): followers + 100k/20k/20k dividers, per channel.
 
-        Measured 2026-11-26, averaged over ch C/D (ch C: 100k/19.38k/19.43k, ch D: 101k/19.48k/
-        19.51k; gains differ 0.5 %, a per-channel split is a later refinement). 22k wasn't on hand.
+        Measured 2026-11-26: ch C (node A) 100k/19.38k/19.43k, ch D (node B) 101k/19.48k/19.51k.
+        The two gains differ 0.48 %; using their average read a 988 ohm resistor (meter) as
+        998.6 ohm (+1.1 %) on 2026-11-27, so each channel now uses its own. 22k wasn't on hand.
         """
-        return cls(r_in=100.5e3, r_up=19.43e3, r_dn=19.47e3, v_supply=3.32, buffered=True)
+        return cls(r_in=100e3, r_up=19.38e3, r_dn=19.43e3, v_supply=3.32, buffered=True,
+                   b=(101e3, 19.48e3, 19.51e3))
 
     @classmethod
     def from_meta(cls, meta):
         """Pick the front end the firmware declared (`# ... frontend_case=1 ...`)."""
         return cls.case1() if meta.get("frontend_case") == 1 else cls()
 
+    def _res(self, channel):
+        return self.b if (channel == "b" and self.b) else (self.r_in, self.r_up, self.r_dn)
+
+    def gain_of(self, channel="a"):
+        r_in, r_up, r_dn = self._res(channel)
+        return (1 / r_in) / (1 / r_in + 1 / r_up + 1 / r_dn)
+
+    def offset_of(self, channel="a"):
+        r_in, r_up, r_dn = self._res(channel)
+        return self.v_supply * (1 / r_up) / (1 / r_in + 1 / r_up + 1 / r_dn)
+
     @property
     def gain(self):
-        return (1 / self.r_in) / (1 / self.r_in + 1 / self.r_up + 1 / self.r_dn)
+        return self.gain_of("a")
 
     @property
     def offset(self):
-        return self.v_supply * (1 / self.r_up) / (1 / self.r_in + 1 / self.r_up + 1 / self.r_dn)
+        return self.offset_of("a")
 
     @property
-    def v_th(self):
-        return self.v_supply * self.r_dn / (self.r_up + self.r_dn)
+    def v_th(self):                      # node B's divider as seen from node B (loading term)
+        _, r_up, r_dn = self._res("b")
+        return self.v_supply * r_dn / (r_up + r_dn)
 
     @property
     def r_th(self):
-        return self.r_in + self.r_up * self.r_dn / (self.r_up + self.r_dn)
+        r_in, r_up, r_dn = self._res("b")
+        return r_in + r_up * r_dn / (r_up + r_dn)
 
-    def node_from_pin(self, v_pin):
-        return (np.asarray(v_pin, float) - self.offset) / self.gain
+    def node_from_pin(self, v_pin, channel="a"):
+        return (np.asarray(v_pin, float) - self.offset_of(channel)) / self.gain_of(channel)
 
     def dut(self, v_pin_a, v_pin_b, rr):
         """Pin voltages at node A / node B -> (V across DUT, current through DUT)."""
-        va, vb = self.node_from_pin(v_pin_a), self.node_from_pin(v_pin_b)
+        va, vb = self.node_from_pin(v_pin_a, "a"), self.node_from_pin(v_pin_b, "b")
         if self.buffered:
             return va - vb, vb / rr
         return va - vb, vb / rr + (vb - self.v_th) / self.r_th
@@ -255,13 +290,26 @@ def capture_to_raw(cap, A=None, Rr=None, cal_v=None, cal_i=None, loopback=False)
     }
 
 
-def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None):
+def drive_phase_shift(node_a, phase):
+    """Angle d (rad) with node_a ~ A*sin(phase + d), from the drive-frequency component over
+    whole cycles. Node A IS the drive, so phase + d is the true drive phase."""
+    z = np.mean((node_a - np.mean(node_a)) * np.exp(-1j * phase))
+    return float(np.angle(2j * z))
+
+
+def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None, align_phase=True, info=None):
     """
     Raw dict for the standalone front end: adc_v = node A pin, adc_i = node B pin.
     Rr defaults to the meta line's `Rr_ohm_placeholder` (Stage 1 picks Rr with a jumper, so
     pass the value actually plugged in). A defaults to the MEASURED drive amplitude — half
     the 1st-99th percentile span of node A — which is what calibrate() should normalise by.
     fe defaults to the front end the meta line declares (FrontEnd.from_meta).
+
+    align_phase: shift the firmware's clock-based phase labels so node A reads +A*sin(phase).
+    The labels carry a constant timing offset (2026-11-27: ~14 deg at 1 kHz from the DMA
+    interrupt latency, ~2.6 deg at 50 Hz); node A is the drive itself, so its measured phase
+    is the drive phase (CLAUDE.md design decision #2) — not the DUT loop's geometry. V/I are
+    untouched. Pass a dict as `info` to get the applied shift back (`phase_shift_deg`).
     """
     fe = FrontEnd.from_meta(cap.meta) if fe is None else fe
     Rr = cap.meta.get("Rr_ohm_placeholder") if Rr is None else Rr
@@ -273,10 +321,17 @@ def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None):
     pin_a = (cal_a or absolute).to_volts(cap.adc_v[sl])
     pin_b = (cal_b or absolute).to_volts(cap.adc_i[sl])
     v, i = fe.dut(pin_a, pin_b, Rr)
+    node_a = fe.node_from_pin(pin_a, "a")
     if A is None:
-        lo, hi = np.percentile(fe.node_from_pin(pin_a), [1, 99])
+        lo, hi = np.percentile(node_a, [1, 99])
         A = (hi - lo) / 2
-    return {"v": v, "i": i, "phase": cap.phase[sl], "A": float(A), "Rr": float(Rr)}
+    phase = cap.phase[sl]
+    shift = drive_phase_shift(node_a, phase) if align_phase else 0.0
+    if info is not None:
+        info["phase_shift_deg"] = float(np.degrees(shift))
+    if shift:
+        phase = np.mod(phase + shift, 2 * np.pi)
+    return {"v": v, "i": i, "phase": phase, "A": float(A), "Rr": float(Rr)}
 
 
 def zero_cal(cap, fe=None, max_b_ratio=0.02):
@@ -298,7 +353,7 @@ def zero_cal(cap, fe=None, max_b_ratio=0.02):
         raise ValueError(f"zero capture: node B follows the drive ({amp[1]:.0f} vs {amp[0]:.0f} counts) "
                          "— take it with no DUT plugged in")
     vref = cap.meta.get("vref", ADC_VREF_DEFAULT)
-    return ChannelCal.zeroed(a, fe.offset, vref), ChannelCal.zeroed(b, fe.offset, vref)
+    return ChannelCal.zeroed(a, fe.offset_of("a"), vref), ChannelCal.zeroed(b, fe.offset_of("b"), vref)
 
 
 # ----------------------------------------------------------------------------------------
@@ -311,17 +366,35 @@ def load_capture(path, max_cycles=None):
 
 
 def _serial_lines(ser, deadline):
+    """Lines from an open port until `deadline`. Bulk reads, not readline(): byte-by-byte reads
+    can't keep up with a 921600 stream, and the CP2102's buffer then overflows (garbled rows)."""
+    buf = b""
     while time.monotonic() < deadline:
-        line = ser.readline()          # returns b"" on the port's read timeout
-        if line:
+        chunk = ser.read(ser.in_waiting or 1)      # b"" on the port's read timeout
+        if not chunk:
+            continue
+        buf += chunk
+        *complete, buf = buf.split(b"\n")
+        for line in complete:
             yield line
+
+
+def reset_board(ser):
+    """Reset an ESP32 DevKit through its auto-reset circuit (EN low while RTS is asserted and DTR
+    isn't), then drop whatever was buffered. Opening the port alone doesn't reset it on macOS."""
+    ser.dtr = False
+    ser.rts = True
+    time.sleep(0.1)
+    ser.rts = False
+    time.sleep(0.05)
+    ser.reset_input_buffer()
 
 
 def read_capture(port, baud=BAUD, n_cycles=4, timeout_s=15.0, frontend=False, **raw_kwargs):
     """
-    Open `port`, read `n_cycles` full drive cycles, return the raw dict.
-    Opening the port normally resets an ESP32 devkit, so the `# ...` settings line arrives
-    fresh; if your adapter doesn't reset it, pass A= and Rr= (via raw_kwargs) explicitly.
+    Open `port`, reset the board (so the `# ...` settings line arrives fresh), read `n_cycles`
+    full drive cycles, return the raw dict. If your adapter can't reset the board, pass A= and
+    Rr= (via raw_kwargs) explicitly.
     """
     try:
         import serial              # pyserial; imported lazily so the ML side never needs it
@@ -329,6 +402,7 @@ def read_capture(port, baud=BAUD, n_cycles=4, timeout_s=15.0, frontend=False, **
         raise ImportError("pyserial is required for live capture: pip install pyserial") from e
 
     with serial.Serial(port, baud, timeout=1.0) as ser:
+        reset_board(ser)
         cap = parse_capture(_serial_lines(ser, time.monotonic() + timeout_s), max_cycles=n_cycles)
     return frontend_to_raw(cap, **raw_kwargs) if frontend else capture_to_raw(cap, **raw_kwargs)
 
@@ -367,7 +441,15 @@ def main(argv=None):
         cap = load_capture(args.file, max_cycles=args.cycles)
         if cap.n_bad_lines:
             print(f"skipped {cap.n_bad_lines} malformed line(s)")
-        raw = frontend_to_raw(cap, **kw) if args.frontend else capture_to_raw(cap, **kw)
+        if cap.n_dup_lines:
+            print(f"dropped {cap.n_dup_lines} repeated/stale row(s) (serial buffer overflow)")
+        if cap.meta.get("frontend_case") is None and args.frontend and not args.fe:
+            print("WARNING: no meta line in the capture -> front end unknown, using the standalone "
+                  "constants (Case 1 volts will be ~2.5x too small). Pass --fe case1 or recapture.")
+        info = {}
+        raw = frontend_to_raw(cap, info=info, **kw) if args.frontend else capture_to_raw(cap, **kw)
+        if info:
+            print(f"drive phase: labels shifted {info['phase_shift_deg']:+.1f} deg to match node A")
 
     print(f"samples: {len(raw['v'])}   A={raw['A']:.4f} V   Rr={raw['Rr']:g} ohm")
     print(f"v range: {raw['v'].min():+.3f} .. {raw['v'].max():+.3f} V   "

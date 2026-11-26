@@ -4,6 +4,7 @@ The fake capture below mimics firmware/esp32/loopback/sine_capture: same meta li
 header/rows, free-running (uneven) sample spacing, and the ADC offset measured in Stage 2.
 """
 import numpy as np
+import time
 import pytest
 import reader, calibrate, features
 
@@ -153,9 +154,10 @@ def test_frontend_recovers_dut_current_with_loading_correction(rr):
 
 
 # ---- Case 1 front end (docs/CASE1_WIRING.md): followers, 100k/22k/22k dividers -----------
-def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True, adc_offset=0):
+def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True, adc_offset=0, label_lead_deg=0.0):
     """Pins as the Case 1 board would produce them: followers, so node B is NOT loaded.
-    r_dut=np.inf is the no-DUT (zero) capture; adc_offset shifts both channels' counts."""
+    r_dut=np.inf is the no-DUT (zero) capture; adc_offset shifts both channels' counts;
+    label_lead_deg makes the printed phase run ahead of the real drive (firmware timing offset)."""
     fe = reader.FrontEnd.case1()
     key = " frontend_case=1" if meta_key else ""
     lines = ["# case1_frontend ready", f"# A_nominal_v=4.97 Rr_ohm_placeholder=1000 vref=3.30{key}",
@@ -164,18 +166,22 @@ def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True, adc_offset
         ph = (k * 2 * np.pi * 3 / n) % (2 * np.pi)
         va = a * np.sin(ph)
         vb = va * rr / (r_dut + rr)                      # plain divider: no loading term
-        ca, cb = (int(round((fe.gain * v + fe.offset) / 3.3 * reader.ADC_MAX)) + adc_offset for v in (va, vb))
-        lines.append(f"{k},{k * 333},{ph:.4f},{ca},{cb}")
+        ca, cb = (int(round((fe.gain_of(ch) * v + fe.offset_of(ch)) / 3.3 * reader.ADC_MAX)) + adc_offset
+                  for ch, v in (("a", va), ("b", vb)))
+        label = (ph + np.radians(label_lead_deg)) % (2 * np.pi)
+        lines.append(f"{k},{k * 333},{label:.4f},{ca},{cb}")
     return lines
 
 
 def test_case1_values_match_wiring_doc():
     fe = reader.FrontEnd.case1()
     assert fe.buffered
-    assert fe.gain == pytest.approx(0.0882, abs=1e-4)      # measured 100k/20k/20k, 2026-11-26
-    assert fe.offset == pytest.approx(1.515, abs=1e-3)     # P1/P2 read 1.509-1.532 V on the board
-    # +-13.5 V (op-amp saturation) must stay inside the ADC's 0..3.3 V
-    assert 0 < fe.gain * -13.5 + fe.offset and fe.gain * 13.5 + fe.offset < 3.3
+    assert fe.gain_of("a") == pytest.approx(0.08844, abs=1e-4)   # ch C 100k/19.38k/19.43k, measured
+    assert fe.gain_of("b") == pytest.approx(0.08802, abs=1e-4)   # ch D 101k/19.48k/19.51k
+    for ch in "ab":
+        assert fe.offset_of(ch) == pytest.approx(1.515, abs=1e-3)   # P1/P2 read 1.509-1.532 V
+        # +-13.5 V (op-amp saturation) must stay inside the ADC's 0..3.3 V
+        assert 0 < fe.gain_of(ch) * -13.5 + fe.offset_of(ch) and fe.gain_of(ch) * 13.5 + fe.offset_of(ch) < 3.3
 
 
 def test_front_end_is_picked_from_meta_line():
@@ -242,3 +248,65 @@ def test_zero_flag_on_the_command_line(tmp_path, capsys):
     cap.write_text("\n".join(case1_lines(adc_offset=-216)) + "\n")
     reader.main(["--file", str(cap), "--frontend", "--rr", "1000", "--zero", str(zero)])
     assert "zero-cal from" in capsys.readouterr().out
+
+
+# ---- serial robustness (2026-11-27: CP2102 overflow re-delivered old 64-byte packets) ---------
+def test_parse_drops_repeated_usb_packets():
+    lines = fake_lines(n_cycles=6, junk=False)
+    head, tail = lines[:60], lines[60:]
+    replay = lines[50:58]                      # an old chunk comes through again, 3 times
+    cap = reader.parse_capture(head + replay * 3 + tail)
+    ref = reader.parse_capture(lines)
+    assert cap.n_dup_lines == 24
+    assert np.array_equal(cap.index, ref.index) and np.array_equal(cap.adc_v, ref.adc_v)
+
+
+def test_parse_keeps_lost_rows_and_follows_a_board_reset():
+    lines = fake_lines(n_cycles=3, junk=False)
+    gap = lines[:40] + lines[45:]              # 5 rows lost: forward jump is fine
+    assert reader.parse_capture(gap).n_dup_lines == 0
+    restarted = lines + lines                  # board reset: meta + header, index back to 0
+    cap = reader.parse_capture(restarted)
+    assert cap.n_dup_lines == 0 and len(cap.index) == 2 * len(reader.parse_capture(lines).index)
+
+
+def test_serial_lines_reassembles_bulk_reads():
+    class FakePort:
+        def __init__(self, data, size):
+            self.chunks = [data[k:k + size] for k in range(0, len(data), size)]
+        @property
+        def in_waiting(self):
+            return len(self.chunks[0]) if self.chunks else 0
+        def read(self, n):
+            return self.chunks.pop(0) if self.chunks else b""
+    text = "\n".join(fake_lines(n_cycles=2, junk=False)) + "\n"
+    port = FakePort(text.encode(), size=37)    # chunk edges fall mid-line
+    got = [l.decode() for l in reader._serial_lines(port, time.monotonic() + 0.5)]
+    assert got == text.splitlines()
+
+
+# ---- per-channel gains + drive-phase alignment (2026-11-27, 988 ohm on the 1 kHz firmware) -----
+def _lockin_r(raw):
+    e = np.exp(-1j * raw["phase"])
+    return abs(np.mean(raw["v"] * e)) / abs(np.mean(raw["i"] * e))
+
+
+def test_case1_per_channel_gains_read_r_exactly():
+    raw = reader.frontend_to_raw(reader.parse_capture(case1_lines(r_dut=988.0, rr=1022.0, n=1200)), Rr=1022.0)
+    assert _lockin_r(raw) == pytest.approx(988.0, rel=2e-3)
+    # one shared (average) gain is what read 998.6 ohm on the board
+    avg = reader.FrontEnd(r_in=100.5e3, r_up=19.43e3, r_dn=19.47e3, v_supply=3.32, buffered=True)
+    raw_avg = reader.frontend_to_raw(reader.parse_capture(case1_lines(r_dut=988.0, rr=1022.0, n=1200)),
+                                     Rr=1022.0, fe=avg)
+    assert _lockin_r(raw_avg) > 988.0 * 1.007
+
+
+def test_phase_labels_aligned_to_node_a():
+    info = {}
+    lines = case1_lines(r_dut=1000.0, rr=1000.0, n=1200, label_lead_deg=14.0)
+    raw = reader.frontend_to_raw(reader.parse_capture(lines), Rr=1000.0, info=info)
+    assert info["phase_shift_deg"] == pytest.approx(-14.0, abs=0.3)
+    i_exact = 5.0 * np.sin(raw["phase"]) / 2000.0          # drive = +A sin(phase) again
+    assert np.max(np.abs(raw["i"] - i_exact)) < 0.03 * 5.0 / 2000.0
+    off = reader.frontend_to_raw(reader.parse_capture(lines), Rr=1000.0, align_phase=False)
+    assert np.allclose(off["v"], raw["v"]) and np.allclose(off["i"], raw["i"])   # V/I untouched

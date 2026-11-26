@@ -363,8 +363,27 @@ DMA สลับลำดับคู่ V/I (`swapped=1` ใน `# burst=` line
 | noise V / I (counts) | 10–11 / 11 | 7.5 / 11.5 |
 | spike > 5σ ช่อง I | 0.25–0.4 % | 0.8 % |
 | คาบการแปลง / jitter เวลา | — | 10.000 µs / ~1.4 µs, ไม่มีข้อมูลล้น |
+| crosstalk ช่อง B ← A (ไม่มี DUT) | ~4 % | **0.07–0.2 %** (≈ noise floor) |
+| zero-cal offset A / B | — | +27 / +29 counts (`tools/zero_capture_1k_2026-11-27.txt`) |
 
-ยังไม่ได้วัด: crosstalk ตอนไม่มี DUT ที่ 1 kHz และ zero-cal ของ firmware นี้ (ต้องทำแยกจาก 50 Hz).
+crosstalk 4 % เดิมจึงมาจากการอ่านแบบ `analogRead` ทีละครั้ง ไม่ใช่จาก C5/C6 อย่างเดียว — ที่ 1 kHz DMA แทบไม่เหลือ
+แม้ยังเป็น 100 pF. ช่อง B (GPIO35) noise สูงกว่าและมี spike มากกว่าช่อง A (~1 % ของจุด) — ยังไม่รู้สาเหตุ.
+
+**Serial (2026-11-27):** การเปิดพอร์ตบน Mac เครื่องนี้**ไม่ได้ reset บอร์ด** และช่อง board เดิมอ่านด้วย `readline()` ทีละไบต์
+ซึ่งตามสตรีม 921600 ไม่ทัน → บัฟเฟอร์ของ CP2102 ล้น ได้แพ็กเก็ต 64 ไบต์ซ้ำ/เป็น NUL และ capture ไม่มี meta line →
+reader ใช้ค่า front end ของ standalone → volts เล็กไป ~2.5 เท่า (A = 1.87 V แทน 4.65 V; ผลในช่อง board ก่อนหน้านี้เชื่อไม่ได้).
+แก้แล้ว: ช่อง board และ `reader.read_capture` reset บอร์ดด้วย RTS pulse และอ่านแบบ bulk; ช่อง board เริ่มเก็บที่ meta
+line; reader ทิ้งแถวที่ index ซ้ำ/ถอยหลัง (`dropped N repeated/stale row(s)`) และเตือนเมื่อไม่มี meta; firmware 1 kHz
+พิมพ์ meta ก่อนแต่ละ burst และเว้น 500 ms ระหว่าง burst. **ต้องปิด-เปิดช่อง board ใหม่ (Ctrl+D แล้วรันใหม่) โค้ดใหม่จึงมีผล.**
+
+**R 0.988 kΩ (มิเตอร์) ที่ 1 kHz + zero-cal (2026-11-27):** ครั้งแรกอ่านได้ 998.6 Ω (+1.1 %) และ `symmetry` = 0.885 (synth
+R ดี ≥ 0.98). สาเหตุสองข้อ แก้ใน `reader.py` แล้ว:
+1. **gain ของ divider สองช่องต่างกัน 0.48 %** (ch D 101k/19.48k/19.51k vs ch C 100k/19.38k/19.43k) แต่ reader ใช้ค่าเฉลี่ย →
+   `FrontEnd.case1()` ใช้ค่าแยกต่อช่องแล้ว (`gain_of("a")` 0.08844, `gain_of("b")` 0.08802) → **988.8 Ω (+0.08 %)**.
+2. **ป้ายเฟสนำคลื่นจริง ~14° ที่ 1 kHz** (node A = A·sin(phase − 14°); 50 Hz ≈ 2.6°) — timestamp ของ DMA frame มาช้า
+   ~39 µs (interrupt latency) → `frontend_to_raw` หมุนป้ายเฟสให้ node A = +A·sin(phase) (node A คือตัวขับเอง จึงเป็น
+   drive phase จริง; V/I ไม่เปลี่ยน) → symmetry 0.999, ML GOOD p_faulty 0.24 → 0.07. reader พิมพ์ `drive phase: labels
+   shifted ... deg`.
 
 ### ขั้นที่ 7: DUT แรก
 

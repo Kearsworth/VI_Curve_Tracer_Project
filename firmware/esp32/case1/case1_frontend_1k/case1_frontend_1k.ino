@@ -29,6 +29,12 @@
 //   - The LUT holds sin() at each 10 us step's MIDDLE, so the zero-order-hold DAC output is not
 //     half a step (1.8 deg) late against the phase label.
 //
+// Serial pacing (2026-11-27): back-to-back bursts kept the 921600 line ~100 % busy, and when the
+// PC read slowly (pyserial readline() byte by byte) the CP2102's small buffer overflowed: 64-byte
+// USB packets came through repeated or as NULs. So each burst is followed by BURST_GAP_MS of
+// silence, and its meta line comes first (above). Read with bulk reads (tools/board_page.py,
+// reader._serial_lines), not readline().
+//
 // ADC values: raw -> mV with the chip's eFuse line-fitting calibration, then printed as counts
 // on the ideal vref/4095 scale (round(mV * 4095 / 3300)), same convention as the 50 Hz sketch,
 // so reader.py and zero-cal work unchanged. Zero-cal must be redone for this sketch.
@@ -67,6 +73,7 @@ const int BURST_CYCLES = 32;                    // whole drive cycles printed pe
 const uint32_t FRAME_BYTES = 1024;              // DMA frame (multiple of SOC_ADC_DIGI_DATA_BYTES_PER_CONV)
 const int CONV_PER_CYCLE = (int)(ADC_SAMPLE_HZ / DRIVE_FREQ_HZ);       // 100 (V+I)
 const int NEED_CONV = (BURST_CYCLES + 3) * CONV_PER_CYCLE;             // margin to trim to whole cycles
+const uint32_t BURST_GAP_MS = 500;             // idle line between bursts (see "Serial pacing" below)
 const int MAX_FRAMES = 256;                     // ISR timestamp slots (setup() uses all; a burst ~8)
 
 adc_continuous_handle_t adcHandle = nullptr;
@@ -278,6 +285,10 @@ void loop() {
   double tConv0 = sumA / nA;
   double jitter = nA > 1 ? sqrt(fmax(0.0, sumA2 / nA - tConv0 * tConv0)) : 0.0;
 
+  // Meta line BEFORE the burst's data: a reader that opens the port mid-stream (no reset) skips
+  // to the next meta line and then gets one clean, whole burst with the settings it needs.
+  printMeta();
+
   // The pattern converts V then I. If the buffer starts with I, DMA swapped each pair.
   bool swapped = sampleCh[0] == (uint8_t)ADC_I_CH;
 
@@ -328,5 +339,5 @@ void loop() {
   Serial.printf("# burst=%lu lines=%d cycles=%d frames=%d conv=%d swapped=%d ovf=%d t_jitter_us=%.2f\n",
                 (unsigned long)burstNo++, printed, wraps > 0 ? wraps - 1 : 0, nFrames, n,
                 swapped ? 1 : 0, poolOverflow ? 1 : 0, jitter);
-  printMeta();
+  delay(BURST_GAP_MS);
 }

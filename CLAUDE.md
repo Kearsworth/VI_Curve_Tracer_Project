@@ -29,7 +29,9 @@ is.**
   FAULTY. First real-board check (50 Hz firmware): 4/4
   good-resistor captures → GOOD, 1/1 open socket → FAULTY. A 1 kHz DMA firmware
   (`firmware/esp32/case1/case1_frontend_1k`, 2026-11-27) also reads a 1k resistor as GOOD, with
-  the V-I phase error down from 2.4° to ~0.4° (`docs/CASE1_WIRING.md`, ADC step 2).
+  the V-I phase error down from 2.4° to ~0.4° and ADC crosstalk from ~4 % to ~0.1 %; with
+  per-channel divider gains, zero-cal and phase labels aligned to node A, a 988 Ω resistor
+  (meter) reads 988.8 Ω and verifies GOOD (`docs/CASE1_WIRING.md`, ADC step 2).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
