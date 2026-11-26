@@ -30,7 +30,9 @@ verdict fails the tests.
 
 ## What's here (2026-11-27)
 
-8 captures, all on the Case 1 board with C5/C6 = 100 pF and Rr 1k: zero-cal, open socket,
-988 Ω, 2k‖2k (1 kHz and 50 Hz), 0.1 µF ceramic, 1N4148 forward and reversed. All 7 scored
-verdicts are correct. Small set, and only hard faults (open, reversed) so far — no soft
-faults, no L/LED/Zener yet.
+12 captures, all on the Case 1 board with C5/C6 = 100 pF and Rr 1k: zero-cal; good parts
+(988 Ω, 2k‖2k at 1 kHz and 50 Hz, 0.1 µF ceramic, 1N4148); hard faults (open socket, jumper
+short, 1N4148 reversed); and soft faults built from good parts — leaky C (0.1 µF ‖ 2 kΩ),
+high-ESR C (0.1 µF + 988 Ω in series), degraded diode (1N4148 + 988 Ω in series). All 11
+scored verdicts are correct. Still small, the soft faults are strong versions (ESR/X 0.63,
+Rleak/X 1.1, series R ≈ Rr), and there's no L, LED or real Zener yet.

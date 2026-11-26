@@ -50,11 +50,16 @@ def lockin_z(raw):
 
 
 def value_text(row, raw):
+    """Lock-in value in the model that fits the part: R; C in series with ESR; C parallel to Rleak."""
     z = lockin_z(raw)
+    w = 2 * np.pi * float(row["drive_hz"])
     if row["component"] == "R":
         return f"{abs(z):.1f} ohm"
+    if row["component"] == "C" and row["fault"] == "leak":
+        y = 1 / z
+        return f"{y.imag / w * 1e9:.1f} nF || {1 / y.real:.0f} ohm"
     if row["component"] == "C" and z.imag < 0:
-        return f"{-1 / (2 * np.pi * float(row['drive_hz']) * z.imag) * 1e9:.1f} nF"
+        return f"{-1 / (w * z.imag) * 1e9:.1f} nF + {z.real:.0f} ohm"
     return ""
 
 
@@ -67,7 +72,7 @@ def main(argv=None):
 
     rows = [r for r in load_labels() if r["health"] in ("good", "faulty")]
     wrong = 0
-    print(f"{'capture':34s} {'truth':16s} {'verdict':7s} {'p_faulty':>8s} {'type':5s} {'value':>11s}")
+    print(f"{'capture':34s} {'truth':19s} {'verdict':7s} {'p_faulty':>8s} {'type':5s} {'value (lock-in)':>22s}")
     for r in rows:
         raw = raw_for(r, args.cycles)
         out = verify.verify(raw)
@@ -76,8 +81,8 @@ def main(argv=None):
         ok = out["verdict"] == expect
         wrong += not ok
         truth = f"{r['component']} {r['health']}" + (f" ({r['fault']})" if r["fault"] else "")
-        print(f"{r['file']:34s} {truth:16s} {out['verdict']:7s} {p_faulty:8.2f} {out['type']:5s} "
-              f"{value_text(r, raw):>11s}  {'ok' if ok else 'WRONG'}")
+        print(f"{r['file']:34s} {truth:19s} {out['verdict']:7s} {p_faulty:8.2f} {out['type']:5s} "
+              f"{value_text(r, raw):>22s}  {'ok' if ok else 'WRONG'}")
     print(f"\n{len(rows) - wrong}/{len(rows)} verdicts correct")
     return 1 if wrong else 0
 

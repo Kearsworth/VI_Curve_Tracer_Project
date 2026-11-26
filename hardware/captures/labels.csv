@@ -7,3 +7,7 @@ file,drive_hz,firmware,frontend,rr_ohm,zero_cal,component,health,fault,reference
 2026-11-27_1k_D1N4148_fwd.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,good,,1N4148,"bought as a 3.3 V zener but no breakdown up to 4.6 V: a plain diode; band toward node B"
 2026-11-27_1k_D1N4148_rev.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,faulty,reversed,1N4148,band toward node A
 2026-11-26_50hz_R2k_par_2k.txt,50,case1_frontend (eFuse mV + V-I-V),case1,1022,,R,good,,2 x 2 kohm in parallel (nominal 1 kohm),no zero-cal was taken for this firmware build
+2026-11-27_1k_short.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,-,faulty,short,,"jumper wire across the DUT spot; |Z| 1.1 ohm"
+2026-11-27_1k_C100n_par_2k.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,C,faulty,leak,0.1 uF ceramic || 2 kohm,"leak emulation: fits R 1922 ohm || 93.5 nF, Rleak/X_C 1.13"
+2026-11-27_1k_C100n_ser_988.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,C,faulty,esr,0.1 uF ceramic + 988 ohm in series,"ESR emulation: fits 96.5 nF + 1045 ohm, ESR/X_C 0.63"
+2026-11-27_1k_D1N4148_ser_988.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,faulty,degraded,1N4148 + 988 ohm in series,"degraded emulation: band toward node B; forward dV/dI 1022 ohm (on_res 1.0)"
