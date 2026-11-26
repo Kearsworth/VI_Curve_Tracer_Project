@@ -153,8 +153,9 @@ def test_frontend_recovers_dut_current_with_loading_correction(rr):
 
 
 # ---- Case 1 front end (docs/CASE1_WIRING.md): followers, 100k/22k/22k dividers -----------
-def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True):
-    """Pins as the Case 1 board would produce them: followers, so node B is NOT loaded."""
+def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True, adc_offset=0):
+    """Pins as the Case 1 board would produce them: followers, so node B is NOT loaded.
+    r_dut=np.inf is the no-DUT (zero) capture; adc_offset shifts both channels' counts."""
     fe = reader.FrontEnd.case1()
     key = " frontend_case=1" if meta_key else ""
     lines = ["# case1_frontend ready", f"# A_nominal_v=4.97 Rr_ohm_placeholder=1000 vref=3.30{key}",
@@ -163,7 +164,7 @@ def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True):
         ph = (k * 2 * np.pi * 3 / n) % (2 * np.pi)
         va = a * np.sin(ph)
         vb = va * rr / (r_dut + rr)                      # plain divider: no loading term
-        ca, cb = (int(round((fe.gain * v + fe.offset) / 3.3 * reader.ADC_MAX)) for v in (va, vb))
+        ca, cb = (int(round((fe.gain * v + fe.offset) / 3.3 * reader.ADC_MAX)) + adc_offset for v in (va, vb))
         lines.append(f"{k},{k * 333},{ph:.4f},{ca},{cb}")
     return lines
 
@@ -171,8 +172,8 @@ def case1_lines(r_dut=1000.0, rr=1000.0, a=5.0, n=600, meta_key=True):
 def test_case1_values_match_wiring_doc():
     fe = reader.FrontEnd.case1()
     assert fe.buffered
-    assert fe.gain == pytest.approx(0.0991, abs=1e-4)      # docs/CASE1_WIRING.md §7 step 6
-    assert fe.offset == pytest.approx(1.486, abs=1e-3)
+    assert fe.gain == pytest.approx(0.0882, abs=1e-4)      # measured 100k/20k/20k, 2026-11-26
+    assert fe.offset == pytest.approx(1.515, abs=1e-3)     # P1/P2 read 1.509-1.532 V on the board
     # +-13.5 V (op-amp saturation) must stay inside the ADC's 0..3.3 V
     assert 0 < fe.gain * -13.5 + fe.offset and fe.gain * 13.5 + fe.offset < 3.3
 
@@ -210,3 +211,34 @@ def test_case1_cli_override_without_meta_key(tmp_path, capsys):
     reader.main(["--file", str(path), "--frontend", "--rr", "1000"])   # no key -> Stage 1 constants
     a_stage1 = float(re.search(r"A=([\d.]+) V", capsys.readouterr().out).group(1))
     assert abs(a_stage1 - 5.0) > 0.5
+
+
+# ---- zero-cal: ESP32 ADC reads ~0.17 V low on the Case 1 board (2026-11-26) ---------------
+def _cap(lines):
+    return reader.parse_capture(lines)
+
+
+def test_zero_cal_removes_adc_offset_from_current():
+    off, rr, r_dut = -216, 1000.0, 1000.0             # -216 counts measured on the board
+    cal_a, cal_b = reader.zero_cal(_cap(case1_lines(r_dut=np.inf, rr=rr, adc_offset=off)))
+    cap = _cap(case1_lines(r_dut, rr, adc_offset=off))
+    raw = reader.frontend_to_raw(cap, Rr=rr, cal_a=cal_a, cal_b=cal_b)
+    i_exact = 5.0 * np.sin(raw["phase"]) / (r_dut + rr)
+    lsb_i = 3.3 / reader.ADC_MAX / reader.FrontEnd.case1().gain / rr
+    assert np.max(np.abs(raw["i"] - i_exact)) < 2 * lsb_i
+    # without it, I carries a ~-2 mA offset as large as the signal itself
+    bad = reader.frontend_to_raw(cap, Rr=rr)
+    assert abs(np.mean(bad["i"])) > 1e-3
+
+
+def test_zero_cal_refuses_a_capture_with_a_dut_in():
+    with pytest.raises(ValueError, match="no DUT"):
+        reader.zero_cal(_cap(case1_lines(r_dut=1000.0, rr=1000.0)))
+
+
+def test_zero_flag_on_the_command_line(tmp_path, capsys):
+    zero, cap = tmp_path / "zero.txt", tmp_path / "cap.txt"
+    zero.write_text("\n".join(case1_lines(r_dut=np.inf, adc_offset=-216)) + "\n")
+    cap.write_text("\n".join(case1_lines(adc_offset=-216)) + "\n")
+    reader.main(["--file", str(cap), "--frontend", "--rr", "1000", "--zero", str(zero)])
+    assert "zero-cal from" in capsys.readouterr().out

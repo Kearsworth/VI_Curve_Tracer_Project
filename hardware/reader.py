@@ -60,6 +60,13 @@ class ChannelCal:
         lo, hi = np.percentile(np.asarray(counts, float), [2, 98])
         return cls((lo + hi) / 2, vref / ADC_MAX)
 
+    @classmethod
+    def zeroed(cls, counts, pin_volts, vref=ADC_VREF_DEFAULT):
+        """Offset-only fit: the mean of `counts` reads as `pin_volts` (ideal slope kept).
+        Built by `zero_cal` from a no-DUT capture, where both nodes are known to sit at 0 V."""
+        vpc = vref / ADC_MAX
+        return cls(float(np.mean(counts)) - pin_volts / vpc, vpc)
+
 
 # ----------------------------------------------------------------------------------------
 # parsing
@@ -168,8 +175,12 @@ class FrontEnd:
 
     @classmethod
     def case1(cls):
-        """Case 1 board (docs/CASE1_WIRING.md): followers + 100k/22k/22k dividers."""
-        return cls(r_in=100e3, r_up=22e3, r_dn=22e3, buffered=True)
+        """Case 1 board (docs/CASE1_WIRING.md): followers + 100k/20k/20k dividers.
+
+        Measured 2026-11-26, averaged over ch C/D (ch C: 100k/19.38k/19.43k, ch D: 101k/19.48k/
+        19.51k; gains differ 0.5 %, a per-channel split is a later refinement). 22k wasn't on hand.
+        """
+        return cls(r_in=100.5e3, r_up=19.43e3, r_dn=19.47e3, v_supply=3.32, buffered=True)
 
     @classmethod
     def from_meta(cls, meta):
@@ -268,6 +279,28 @@ def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None):
     return {"v": v, "i": i, "phase": cap.phase[sl], "A": float(A), "Rr": float(Rr)}
 
 
+def zero_cal(cap, fe=None, max_b_ratio=0.02):
+    """
+    (cal_a, cal_b) from a capture taken with NO DUT plugged in (Rr still to GND).
+    The ESP32 ADC reads ~0.17 V low on this board (2026-11-26: P1/P2 1.508 V on a meter,
+    1654/1658 counts ~ 1.33 V ideal) — that shifts node B by ~-2 V and wrecks I = V_B/Rr.
+    With no DUT, node B is exactly 0 V and node A is a sine centred on ~0 V (DAC_CENTER is
+    trimmed), so each channel's whole-cycle mean is where node = 0 V, i.e. pin = fe.offset.
+    Only the offset is fitted; the slope stays ideal (V/I ratios don't depend on it).
+    Refuses a capture whose node B follows the drive (a DUT was plugged in).
+    """
+    fe = FrontEnd.from_meta(cap.meta) if fe is None else fe
+    sl = _whole_cycle_slice(cap.phase)
+    a, b, ph = (np.asarray(x[sl], float) for x in (cap.adc_v, cap.adc_i, cap.phase))
+    basis = np.c_[np.sin(ph), np.cos(ph), np.ones_like(ph)]
+    amp = [np.hypot(*np.linalg.lstsq(basis, x, rcond=None)[0][:2]) for x in (a, b)]
+    if amp[1] > max_b_ratio * amp[0]:
+        raise ValueError(f"zero capture: node B follows the drive ({amp[1]:.0f} vs {amp[0]:.0f} counts) "
+                         "— take it with no DUT plugged in")
+    vref = cap.meta.get("vref", ADC_VREF_DEFAULT)
+    return ChannelCal.zeroed(a, fe.offset, vref), ChannelCal.zeroed(b, fe.offset, vref)
+
+
 # ----------------------------------------------------------------------------------------
 # sources: file and serial
 # ----------------------------------------------------------------------------------------
@@ -315,12 +348,19 @@ def main(argv=None):
     ap.add_argument("--rr", type=float, help="sense resistor actually connected, ohms (--frontend)")
     ap.add_argument("--fe", choices=("stage1", "case1"),
                     help="front-end constants (--frontend); default: from the meta line's frontend_case")
+    ap.add_argument("--zero", metavar="FILE",
+                    help="no-DUT capture: zero each ADC channel's offset from it (--frontend)")
     ap.add_argument("--verify", action="store_true", help="run calibrate->features->verify on the capture")
     args = ap.parse_args(argv)
 
     kw = dict(Rr=args.rr) if args.frontend else dict(loopback=args.loopback)
     if args.frontend and args.fe:
         kw["fe"] = FrontEnd.case1() if args.fe == "case1" else FrontEnd()
+    if args.frontend and args.zero:
+        zcap = load_capture(args.zero)
+        kw["cal_a"], kw["cal_b"] = zero_cal(zcap, fe=kw.get("fe"))
+        print(f"zero-cal from {args.zero}: offset A {kw['cal_a'].offset_counts:.1f}, "
+              f"B {kw['cal_b'].offset_counts:.1f} counts")
     if args.port:
         raw = read_capture(args.port, n_cycles=args.cycles, frontend=args.frontend, **kw)
     else:

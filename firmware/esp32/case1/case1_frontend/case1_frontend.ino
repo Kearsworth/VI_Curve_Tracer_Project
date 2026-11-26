@@ -22,6 +22,18 @@
 // 3V3 -> j33, VIN -> a3 (1N5819 -> DD1718PA VIN), GND -> bottom GND rail. Connect GPIO34/35
 // LAST, only after f30/f16 measure ~1.49 V DC.
 //
+// ADC read (changed 2026-11-26, ADC step 1):
+//   - analogReadMilliVolts(): applies the chip's factory eFuse calibration (offset + gain +
+//     curve), instead of raw analogRead() counts that read ~0.17 V low on this board.
+//     Output is still "counts" on the ideal vref/4095 scale (round(mV * 4095 / 3300)), so the
+//     frame and reader.py are unchanged; only the ADC error behind the numbers is smaller.
+//   - Symmetric V-I-V order with oversampling: V I V I ... V (OVERSAMPLE I reads, OVERSAMPLE+1
+//     V reads). The average V and average I then share the same mean sample time, so the
+//     ~one-analogRead V->I gap (fake phase shift) cancels, and averaging cuts ADC noise.
+//   - Phase is labelled at the MIDDLE of the read block (its mean sample time).
+//   - setup() times the block and lowers OVERSAMPLE until it fits in 70 % of the sample
+//     period; the meta line reports oversample=, read_block_us= and adc_read=.
+//
 // Original header (still accurate for the timing/core design):
 // Step 1 of the dual-core single-board plan (see ../../README.md "Dual-core single-board
 // plan" and docs/ROADMAP.md Phase A). Same job as loopback/sine_capture.ino, but split
@@ -54,15 +66,21 @@ const int ADC_I_PIN = 35;   // ADC1_CH7 — sense-resistor channel (loopback: sa
 const double DRIVE_FREQ_HZ = 50.0;   // bring-up only; ~1kHz needs DMA ADC (ROADMAP Phase A)
 const int LUT_SIZE = 100;
 uint8_t sineLUT[LUT_SIZE];
-const int DAC_CENTER = 128;
+const int DAC_CENTER = 132;             // trimmed 2026-11-26: node A read +0.27 V at 128 (~75 mV/count)
 const int DAC_AMPLITUDE_COUNTS = 63;    // dacValue swings 65..191; x6.1 front-end gain -> 4.97 V at node A
 
 const float VREF = 3.3f;
-const float FRONTEND_GAIN = 6.1f;        // (51k+10k)/10k difference amp, inverting (docs/CASE1_WIRING.md)
+const float FRONTEND_GAIN = 5.92f;       // measured R: (49.73k+9.80k)/10.05k = 5.923 (docs/CASE1_WIRING.md step 4)
 const float A_NOMINAL_VOLTS = DAC_AMPLITUDE_COUNTS * (VREF / 255.0f) * FRONTEND_GAIN;   // nominal; reader.py measures the real A
 const float RR_OHMS_PLACEHOLDER = 1000.0f;   // Case 1 default jumper JS -> f50 (Rr1); pass --rr if you move it
 
 const unsigned long BAUD = 921600;
+
+// ---------- ADC read block (see header "ADC read") ----------
+const int OVERSAMPLE_MAX = 4;             // I reads per sample; V gets one more (V-I-V order)
+int oversample = OVERSAMPLE_MAX;          // lowered in setup() if the block doesn't fit
+float readBlockUs = 0;                    // measured in setup(), reported in the meta line
+const float MV_TO_COUNTS = 4095.0f / 3300.0f;   // keep reader.py's ideal vref/4095 count scale
 
 // ---------- UART budget (logic-analyzer finding, 2026-10-09 — see ../../README.md) ----------
 // At 921600 8N1 one byte is 10.85 us. Free-running, the core sampled every ~312 us while lines
@@ -71,7 +89,10 @@ const unsigned long BAUD = 921600;
 // t_us — nothing downstream uses them except to spot drops, which still works modulo the wrap;
 // (2) sample on a fixed 333 us grid. Longest line = 4+5+6+4+4 digits + 4 commas + '\n' = 28 bytes
 // = ~304 us < 333 us, so the UART never saturates and the rate no longer decays with uptime.
-const int64_t SAMPLE_PERIOD_US = 333;     // ~60 samples per 50 Hz cycle
+const int64_t SAMPLE_PERIOD_US = 400;     // 50 samples per 50 Hz cycle. Was 333 (60/cycle) with one
+                                          // read per channel; 2026-11-26 the V-I-V x2 read block
+                                          // (~236 us in loop) + line write (~109 us) needs ~345 us.
+                                          // 400 us x 5 reads beats 333 us x 3 reads on reads/s.
 const uint32_t INDEX_WRAP = 10000;        // index printed as 0..9999
 const int64_t T_US_WRAP = 100000;         // t_us printed as 0..99999 (wraps every 100 ms = 5 cycles)
 
@@ -103,10 +124,25 @@ void driveTask(void *) {
   }
 }
 
+// V I V I ... V: oversample I reads between oversample+1 V reads -> equal mean sample times.
+static inline void readBlock(int n, int &adcV, int &adcI) {
+  uint32_t sumV = analogReadMilliVolts(ADC_V_PIN), sumI = 0;
+  for (int k = 0; k < n; k++) {
+    sumI += analogReadMilliVolts(ADC_I_PIN);
+    sumV += analogReadMilliVolts(ADC_V_PIN);
+  }
+  adcV = constrain((int)lroundf(sumV / (float)(n + 1) * MV_TO_COUNTS), 0, 4095);
+  adcI = constrain((int)lroundf(sumI / (float)n * MV_TO_COUNTS), 0, 4095);
+}
+
 uint32_t sampleIndex = 0;
 int64_t nextSampleUs = 0;
 
 void setup() {
+  // Big TX buffer: printf() returns at once and the UART drains in the background. Without it
+  // the write blocked and the ~213 us read block stacked on top, stretching 333 us to ~433 us
+  // per sample (measured 2026-11-26). Must be set before begin().
+  Serial.setTxBufferSize(4096);
   Serial.begin(BAUD);
   delay(200);
 
@@ -117,16 +153,27 @@ void setup() {
     sineLUT[i] = (uint8_t)constrain(v, 0, 255);
   }
 
+  // Time the read block; shrink oversample until it uses <= 70 % of the sample period, so the
+  // printf still has room and the 333 us grid never overruns.
+  for (; oversample >= 1; oversample--) {
+    int v, i;
+    int64_t a = esp_timer_get_time();
+    for (int k = 0; k < 200; k++) readBlock(oversample, v, i);
+    readBlockUs = (esp_timer_get_time() - a) / 200.0f;
+    if (readBlockUs <= 0.7f * SAMPLE_PERIOD_US || oversample == 1) break;
+  }
+
   Serial.println("# case1_frontend ready");
   Serial.printf(
     "# drive_freq_hz=%.3f lut_size=%d dac_center=%d dac_amplitude_counts=%d "
     "A_nominal_v=%.4f Rr_ohm_placeholder=%.4f vref=%.2f dac_bits=8 adc_bits=12 baud=%lu "
     "drive_core=%d capture_core=%d sample_period_us=%d index_wrap=%lu t_us_wrap=%d "
-    "frontend_case=1 dac_inverted=1\n",
+    "frontend_case=1 dac_inverted=1 adc_read=mv_efuse vi_order=VIV oversample=%d read_block_us=%.1f\n",
     DRIVE_FREQ_HZ, LUT_SIZE, DAC_CENTER, DAC_AMPLITUDE_COUNTS,
     A_NOMINAL_VOLTS, RR_OHMS_PLACEHOLDER, VREF, BAUD,
     (int)DRIVE_CORE, (int)xPortGetCoreID(),
-    (int)SAMPLE_PERIOD_US, (unsigned long)INDEX_WRAP, (int)T_US_WRAP
+    (int)SAMPLE_PERIOD_US, (unsigned long)INDEX_WRAP, (int)T_US_WRAP,
+    oversample, readBlockUs
   );
   if (xPortGetCoreID() != CAPTURE_CORE) {
     Serial.println("# WARNING: loop() is not on the expected capture core");
@@ -151,12 +198,29 @@ void loop() {
   nextSampleUs += SAMPLE_PERIOD_US;
   if (nextSampleUs <= tSample) nextSampleUs = tSample + SAMPLE_PERIOD_US;   // overran: skip a slot, don't burst
 
-  int adcV = analogRead(ADC_V_PIN);
-  int adcI = analogRead(ADC_I_PIN);
+  int adcV, adcI;
+  readBlock(oversample, adcV, adcI);
+  int64_t tRead = esp_timer_get_time();
+  int64_t tMid = (tSample + tRead) / 2;   // mean sample time of the block
 
-  double phaseRad = cyclePosAt(tSample) * 2.0 * PI;
+  double phaseRad = cyclePosAt(tMid) * 2.0 * PI;
 
-  Serial.printf("%lu,%lu,%.4f,%d,%d\n", (unsigned long)(sampleIndex % INDEX_WRAP),
-                (unsigned long)((tSample - t0us) % T_US_WRAP), phaseRad, adcV, adcI);
+  // Integer-only formatting: "%.4f" on a double cost ~200 us per line here (soft-float printf),
+  // which with the read block overran the 333 us grid. Same text out: phase as d.dddd.
+  uint32_t ph4 = (uint32_t)lround(phaseRad * 10000.0);
+  char buf[40];
+  int len = snprintf(buf, sizeof buf, "%lu,%lu,%lu.%04lu,%d,%d\n", (unsigned long)(sampleIndex % INDEX_WRAP),
+                     (unsigned long)((tMid - t0us) % T_US_WRAP),
+                     (unsigned long)(ph4 / 10000), (unsigned long)(ph4 % 10000), adcV, adcI);
+  Serial.write((const uint8_t *)buf, len);
   sampleIndex++;
+
+  // timing report (a '#' line: reader.py only reads it as meta) every 5000 samples
+  static int64_t sumRead = 0, sumPrint = 0;
+  sumRead += tRead - tSample;
+  sumPrint += esp_timer_get_time() - tRead;
+  if (sampleIndex % 5000 == 0) {
+    Serial.printf("# timing loop_read_us=%.1f loop_print_us=%.1f\n", sumRead / 5000.0, sumPrint / 5000.0);
+    sumRead = sumPrint = 0;
+  }
 }

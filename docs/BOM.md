@@ -21,7 +21,7 @@ parts**.
 | Trimmer **100 kΩ**, multi-turn (VR1, VR2) | 2 | fine-tune gain to exactly ±10 V |
 | Sense resistors **100 Ω / 1 k / 10 k / 100 kΩ**, 1 % | 1 each | current sense R_r (switchable range) |
 | Capacitor **0.1 µF** ceramic | ≥4 | rail decoupling at each op-amp |
-| Capacitor **10 µF** electrolytic | ≥4 | rail bulk decoupling |
+| Capacitor **10 µF** electrolytic | ≥4 | rail bulk decoupling — **optional, not on hand (2026-11-25)**: build uses 0.1 µF in the E1–E4 spots; add 10 µF (≥ 25 V rating) only if the step-6 noise check in `docs/CASE1_WIRING.md` fails |
 | **1N5819** Schottky diode | 2–3 | reverse-protect the 5 V feed |
 | IC socket, DIP-14 | 1–2 | make the OPA4134 swappable (don't solder it directly) |
 | Breadboard + jumper wires | — | prototyping |
