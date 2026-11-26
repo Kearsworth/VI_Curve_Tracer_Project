@@ -19,8 +19,16 @@ it real data.
 full checklist. This section is a 60-second summary, not the source of truth; ROADMAP.md
 is.**
 
-- **ML pipeline: working** on **synthetic data**. Health (good/faulty) ≈ 97.8%,
-  component-type ≈ 100% (only meaningful for good parts), anomaly detector ROC-AUC ≈ 0.87.
+- **ML pipeline: working** on **synthetic data**. Since 2026-11-27 `synth.py` draws R/C/L over
+  the full value range (R 100 Ω–300 kΩ, C 1 nF–1000 µF, L 10 mH–10 H) with a simulated
+  auto-range (drive frequency + Rr chosen so |Z|/Rr ≈ 1) and the measured Case 1 board
+  imperfections (node noise/offset/quantization, ADC crosstalk, V-I skew, ADC spikes, 40–60
+  points/cycle). On that harder data: health ≈ 95%, type ≈ 100% (good parts), anomaly ROC-AUC
+  ≈ 0.79. The older one-value model (97.8% on its own data) scores ≈ 75% on it, mostly by
+  calling good parts of other values FAULTY. First real-board check (50 Hz firmware): 4/4
+  good-resistor captures → GOOD, 1/1 open socket → FAULTY. A 1 kHz DMA firmware
+  (`firmware/esp32/case1/case1_frontend_1k`, 2026-11-27) also reads a 1k resistor as GOOD, with
+  the V-I phase error down from 2.4° to ~0.4° (`docs/CASE1_WIRING.md`, ADC step 2).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
@@ -147,8 +155,14 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 ## 7. Known limitations (state these honestly; don't hide them)
 
 - All numbers are on **synthetic data**; real hardware will differ — must re-validate.
-- **Soft faults are the weak spot:** degraded diode ~72%, Zener Vz-shift ~75%, leaky
-  cap ~82% recall (hard faults are ~100%). Improving these is a roadmap item.
+- **Soft faults are the weak spot** (2026-11-27 synth): Zener leak ~10% and LED degraded
+  ~20–80% recall (unstable run to run) — the 12 features have no reverse-region slope or
+  forward-slope measure; leaky cap, shorted turns, degraded diode ~92–93%; hard faults ~100%.
+  Improving these is a roadmap item (soft-fault features).
+- **"Any value" assumes auto-ranging hardware that doesn't exist yet:** synth picks the drive
+  frequency from 1 Hz–1 kHz and Rr from 220 Ω/1k/10k/100k (`synth.TEST_FREQS_HZ`,
+  `RR_OPTIONS`). The board today has 1k/10k/100k by jumper and one drive frequency per
+  firmware, so big C (above ~10 µF) and small L can't yet be measured for real.
 - Requires knowing capture settings (A, Rr) for normalization — they travel with the raw data.
 
 ## 8. Conventions

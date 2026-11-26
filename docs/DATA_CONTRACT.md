@@ -21,10 +21,13 @@ raw = {
   the loop geometry. In synth this is `omega * t`.
 - `A` and `Rr` are needed for normalization and must travel with the capture.
 - `A` is the **measured** peak at the drive node, in the same real-volt units as `v` — not the
-  DAC's nominal setting (the firmware's `A_nominal_v`). The synthetic data is trained at
-  `A = 5 V`, and a diode/LED knee sits at a fixed absolute voltage, so real captures are
-  levelled (DAC swing adjusted, capture, measure `A`, repeat) until the measured `A` is 5 V ±
-  1–2%. Loopback has no drive-node channel yet, so it still falls back to the nominal value.
+  DAC's nominal setting (the firmware's `A_nominal_v`). Since 2026-11-27 the synthetic data
+  spans `A = 4–6 V` (it was a fixed 5 V); a diode/LED knee sits at a fixed absolute voltage,
+  so keep real captures inside that band. Loopback has no drive-node channel yet, so it
+  still falls back to the nominal value.
+- synth-only extra keys (labels/metadata, ignored by calibrate/verify): `component`,
+  `health`, `fault`, `F` (drive frequency the simulated auto-range picked, Hz), `value`
+  (R Ω / C F / L H, diode/LED Vf, Zener Vz).
 
 ## 2. Calibrated signature (output of calibrate.py)
 
@@ -73,7 +76,10 @@ verify(raw) -> {
 
 Components: `R, C, L, D, LED, Z`.
 Faults per component (shape-changing only): open, short (all); esr, leak (C); dcr,
-shorted_turns (L); reversed, degraded (D, LED); reversed, vz_shift (Z).
+shorted_turns (L); reversed, degraded (D, LED); reversed, leak (Z). (`vz_shift` was replaced
+by `leak` on 2026-11-27: with Vz drawn over 2.4–5.1 V a shifted Vz looks like a good Zener of
+another value, i.e. value drift — design decision #5.) ESR/leak/DCR are defined relative to
+the part's own reactance at its test frequency, not in fixed ohms.
 
 ## 7. ESP32 → PC serial frame
 

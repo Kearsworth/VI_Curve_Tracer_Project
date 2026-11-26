@@ -31,5 +31,6 @@ pytest -q
 
 ## Status
 
-ML pipeline works on synthetic data (~97.8% good/faulty). Hardware is in progress; we
+ML pipeline works on synthetic data (~95% good/faulty over the full R/C/L value range with
+simulated board noise; see `CLAUDE.md` §2). Hardware is in progress; we
 currently test the data path with an ADC/DAC loopback. See `CLAUDE.md` §2.
