@@ -11,3 +11,4 @@ file,drive_hz,firmware,frontend,rr_ohm,zero_cal,component,health,fault,reference
 2026-11-27_1k_C100n_par_2k.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,C,faulty,leak,0.1 uF ceramic || 2 kohm,"leak emulation: fits R 1922 ohm || 93.5 nF, Rleak/X_C 1.13"
 2026-11-27_1k_C100n_ser_988.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,C,faulty,esr,0.1 uF ceramic + 988 ohm in series,"ESR emulation: fits 96.5 nF + 1045 ohm, ESR/X_C 0.63"
 2026-11-27_1k_D1N4148_ser_988.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,faulty,degraded,1N4148 + 988 ohm in series,"degraded emulation: band toward node B; forward dV/dI 1022 ohm (on_res 1.0)"
+2026-11-27_1k_D1N4148_ser_217.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,faulty,degraded,1N4148 + 217 ohm in series,"mild degraded emulation: forward dV/dI 260 ohm (on_res 0.25, near the lower edge of synth's 0.2-0.8)"
