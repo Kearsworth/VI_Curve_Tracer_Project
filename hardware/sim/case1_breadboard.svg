@@ -1098,6 +1098,11 @@
 <circle cx="904" cy="92" r="2.6" fill="#111"/>
 <circle cx="904" cy="56" r="2.6" fill="#111"/>
 <text x="910.0" y="68.0" fill="#111" font-weight="700" font-size="8">Rr3</text>
+<line x1="936" y1="92" x2="936" y2="56" stroke="#9A9A9A" stroke-width="1.4"/>
+<rect x="932.0" y="67.0" width="8" height="14" rx="2" fill="#8B5E34"/>
+<circle cx="936" cy="92" r="2.6" fill="#111"/>
+<circle cx="936" cy="56" r="2.6" fill="#111"/>
+<text x="942.0" y="68.0" fill="#111" font-weight="700" font-size="8">Rr4</text>
 <path d="M440 140 Q448.0 126.0 456 140" fill="none" stroke="#888" stroke-width="2.4" stroke-linecap="round"/>
 <circle cx="440" cy="140" r="2.6" fill="#111"/>
 <circle cx="456" cy="140" r="2.6" fill="#111"/>

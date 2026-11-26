@@ -71,10 +71,11 @@ PARTS = [
     ("W8", "wire", ("g", 40), ("h", 24), "node A → pin 10 (+IN C)", "orange", "NODE_A", "NODE_A"),
     ("DUT", "dut", ("i", 40), ("i", 44), "DUT: ขาบวก/anode ที่ row 40", "DUT", "NODE_A", "NODE_B"),
     ("W9", "wire", ("g", 44), ("g", 22), "node B → pin 12 (+IN D)", "green", "NODE_B", "NODE_B"),
-    ("JS", "jumper", ("h", 44), ("f", 50), "สายเลือก Rr (ตอนนี้ 1 kΩ) ย้ายไป f52 / f54", "green", "NODE_B", "NODE_B"),
+    ("JS", "jumper", ("h", 44), ("f", 50), "สายเลือก Rr (ตอนนี้ 1 kΩ) ย้ายไป f52 / f54 / f56", "green", "NODE_B", "NODE_B"),
     ("Rr1", "res", ("j", 50), ("TRg", 50), "Rr 1 kΩ (เลือกอยู่: ต่อกับ node B ผ่าน JS)", "1k", "NODE_B", "GND"),
     ("Rr2", "res", ("j", 52), ("TRg", 52), "Rr 10 kΩ", "10k", "RR_10K", "GND"),
     ("Rr3", "res", ("j", 54), ("TRg", 54), "Rr 100 kΩ", "100k", "RR_100K", "GND"),
+    ("Rr4", "res", ("j", 56), ("TRg", 56), "Rr 220 Ω (C ใหญ่; ใช้เฉพาะ A ≤ 5 V)", "220", "RR_220", "GND"),
     # --- channels C/D: unity followers (FET input: no load on node A/B)
     ("W10", "wire", ("g", 25), ("g", 26), "pin 9 ↔ pin 8 (follower C)", "gray", "BUF_A", "BUF_A"),
     ("W11", "wire", ("g", 21), ("g", 20), "pin 13 ↔ pin 14 (follower D)", "gray", "BUF_B", "BUF_B"),
@@ -109,7 +110,7 @@ PIN_NETS = {1: "NODE_A", 2: "INV_A", 3: "NINV_A", 4: "+15", 5: "VREF_DIV", 6: "V
             8: "BUF_A", 9: "BUF_A", 10: "NODE_A", 11: "-15", 12: "NODE_B", 13: "BUF_B", 14: "BUF_B"}
 RAIL_NETS = {"TRn": "-15", "TRg": "GND", "BRg": "GND", "BRp": "+15"}
 # nets that exist only when the Rr jumper picks them
-OPTIONAL = {"RR_10K", "RR_100K"}
+OPTIONAL = {"RR_10K", "RR_100K", "RR_220"}
 
 # ------------------------------------------------------------------ checks
 
