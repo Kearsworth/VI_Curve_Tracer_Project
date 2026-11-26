@@ -1,0 +1,9 @@
+file,drive_hz,firmware,frontend,rr_ohm,zero_cal,component,health,fault,reference,notes
+2026-11-27_1k_zero_noDUT.txt,1000,case1_frontend_1k,case1,1022,,-,zero,,,"no DUT; zero-cal for the 1 kHz rows (same as tools/zero_capture_1k_2026-11-27.txt)"
+2026-11-27_1k_open.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,-,faulty,open,,empty DUT socket
+2026-11-27_1k_R988.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,R,good,,988 ohm (multimeter),reads 988.8 ohm
+2026-11-27_1k_R2k_par_2k.txt,1000,case1_frontend_1k (first build),case1,1022,2026-11-27_1k_zero_noDUT.txt,R,good,,2 x 2 kohm in parallel (nominal 1 kohm),"first 1 kHz build printed its meta line after each burst; moved to the top here"
+2026-11-27_1k_C100n.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,C,good,,100 nF ceramic,"reads 97.3 nF, DF ~5 %"
+2026-11-27_1k_D1N4148_fwd.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,good,,1N4148,"bought as a 3.3 V zener but no breakdown up to 4.6 V: a plain diode; band toward node B"
+2026-11-27_1k_D1N4148_rev.txt,1000,case1_frontend_1k,case1,1022,2026-11-27_1k_zero_noDUT.txt,D,faulty,reversed,1N4148,band toward node A
+2026-11-26_50hz_R2k_par_2k.txt,50,case1_frontend (eFuse mV + V-I-V),case1,1022,,R,good,,2 x 2 kohm in parallel (nominal 1 kohm),no zero-cal was taken for this firmware build

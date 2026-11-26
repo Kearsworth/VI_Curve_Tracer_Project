@@ -103,7 +103,10 @@ vi_ml/            The ML pipeline (Python, run from inside this folder)
   models/         trained models land here (git-ignored)
 tests/            pytest tests that encode the invariants (run these after changes!)
 hardware/         reader.py (serial frames → raw dict), live_pipeline_demo.py (live two-board
-                  dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py
+                  dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py,
+                  demo_r.py (live R meter), eval_real.py (model on labelled real captures)
+  captures/       labelled real Case 1 captures + labels.csv (also run by
+                  tests/test_real_captures.py; how to add one: captures/README.md)
 firmware/esp32/   loopback/ (single-board, verified) and dual_board/ (two-board, verified) —
                   both implemented and run on real hardware, not just spec anymore;
                   case1/case1_frontend (Case 1 front end, compiles, not yet on hardware)

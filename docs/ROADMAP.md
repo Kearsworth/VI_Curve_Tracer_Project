@@ -109,8 +109,12 @@ Ordered roughly by priority. Check items off as they land.
       switch to A = 10 or add A = 10 alongside the existing A, then rerun `pytest` (the
       accuracy-floor test retrains the models). Reasoning: `docs/BOM.md` §5.
 - [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
-      good and (deliberately created) faulty.
+      good and (deliberately created) faulty. *Started 2026-11-27:* `hardware/captures/`
+      (labels.csv) has R, C, diode good, diode reversed and open on the Case 1 board; still
+      missing L, LED, Zener and every soft fault.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 7/7 verdicts correct (too few
+      to compare with the ~98 % synthetic number; hard faults only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.
 
