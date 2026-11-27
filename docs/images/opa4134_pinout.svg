@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 560" font-family="Helvetica, Arial, sans-serif">
+  <title>OPA4134PA pinout and how the Case 1 front end uses each channel</title>
+  <rect width="940" height="560" fill="#ffffff"/>
+  <text x="470" y="30" text-anchor="middle" font-size="19" font-weight="bold" fill="#1d2733">OPA4134PA (DIP-14, top view) — how Case 1 uses it</text>
+
+  <!-- chip body + notch -->
+  <rect x="340" y="55" width="260" height="420" rx="6" fill="#f4f5f7" stroke="#33495d" stroke-width="2.5"/>
+  <path d="M452,55 a18,18 0 0,0 36,0" fill="#ffffff" stroke="#33495d" stroke-width="2.5"/>
+
+  <!-- left pins 1..7 -->
+  <g font-size="14" fill="#1d2733">
+    <rect x="312" y="88"  width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="105" text-anchor="middle">1</text>
+    <rect x="312" y="143" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="160" text-anchor="middle">2</text>
+    <rect x="312" y="198" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="215" text-anchor="middle">3</text>
+    <rect x="312" y="253" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="270" text-anchor="middle">4</text>
+    <rect x="312" y="308" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="325" text-anchor="middle">5</text>
+    <rect x="312" y="363" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="380" text-anchor="middle">6</text>
+    <rect x="312" y="418" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="326" y="435" text-anchor="middle">7</text>
+    <!-- right pins 14..8 -->
+    <rect x="600" y="88"  width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="105" text-anchor="middle">14</text>
+    <rect x="600" y="143" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="160" text-anchor="middle">13</text>
+    <rect x="600" y="198" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="215" text-anchor="middle">12</text>
+    <rect x="600" y="253" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="270" text-anchor="middle">11</text>
+    <rect x="600" y="308" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="325" text-anchor="middle">10</text>
+    <rect x="600" y="363" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="380" text-anchor="middle">9</text>
+    <rect x="600" y="418" width="28" height="24" fill="#d9dee5" stroke="#33495d"/><text x="614" y="435" text-anchor="middle">8</text>
+  </g>
+
+  <!-- pin names inside the body -->
+  <g font-size="13" fill="#33495d">
+    <text x="348" y="105">Out A</text><text x="348" y="160">−In A</text><text x="348" y="215">+In A</text>
+    <text x="348" y="270">V+</text>
+    <text x="348" y="325">+In B</text><text x="348" y="380">−In B</text><text x="348" y="435">Out B</text>
+    <text x="592" y="105" text-anchor="end">Out D</text><text x="592" y="160" text-anchor="end">−In D</text><text x="592" y="215" text-anchor="end">+In D</text>
+    <text x="592" y="270" text-anchor="end">V−</text>
+    <text x="592" y="325" text-anchor="end">+In C</text><text x="592" y="380" text-anchor="end">−In C</text><text x="592" y="435" text-anchor="end">Out C</text>
+  </g>
+
+  <!-- the four amplifiers, laid out as in the datasheet -->
+  <g stroke-width="2" fill="#ffffff">
+    <path d="M400,125 L400,205 L455,165 Z" stroke="#c0392b"/>
+    <text x="414" y="170" font-size="15" font-weight="bold" fill="#c0392b" stroke="none">A</text>
+    <path d="M400,325 L400,405 L455,365 Z" stroke="#1b7f3b"/>
+    <text x="414" y="370" font-size="15" font-weight="bold" fill="#1b7f3b" stroke="none">B</text>
+    <path d="M540,125 L540,205 L485,165 Z" stroke="#1f5fa8"/>
+    <text x="515" y="170" font-size="15" font-weight="bold" fill="#1f5fa8" stroke="none">D</text>
+    <path d="M540,325 L540,405 L485,365 Z" stroke="#1f5fa8"/>
+    <text x="515" y="370" font-size="15" font-weight="bold" fill="#1f5fa8" stroke="none">C</text>
+  </g>
+
+  <!-- what each pin connects to in Case 1: left side -->
+  <g font-size="13.5" text-anchor="end">
+    <text x="302" y="105" fill="#c0392b">node A → DUT  (drive out, up to ±10 V)</text>
+    <text x="302" y="160" fill="#c0392b">R1 10k ← GPIO25 (DAC); 51k+10k to pin 1</text>
+    <text x="302" y="215" fill="#c0392b">R2 10k ← V_REF; 51k+10k → GND</text>
+    <text x="302" y="270" fill="#555555">+15 V (DD1718PA), 0.1 µF to GND</text>
+    <text x="302" y="325" fill="#1b7f3b">10k / 10k divider from 3V3 (1.65 V)</text>
+    <text x="302" y="380" fill="#1b7f3b">tied to pin 7 (follower)</text>
+    <text x="302" y="435" fill="#1b7f3b">V_REF 1.65 V → R2 (pin 3)</text>
+  </g>
+  <!-- right side -->
+  <g font-size="13.5">
+    <text x="638" y="105" fill="#1f5fa8">→ 100k / 20k / 20k divider → GPIO35</text>
+    <text x="638" y="160" fill="#1f5fa8">tied to pin 14 (follower)</text>
+    <text x="638" y="215" fill="#1f5fa8">← node B (DUT low side, Rr to GND)</text>
+    <text x="638" y="270" fill="#555555">−15 V (DD1718PA), 0.1 µF to GND</text>
+    <text x="638" y="325" fill="#1f5fa8">← node A (sense)</text>
+    <text x="638" y="380" fill="#1f5fa8">tied to pin 8 (follower)</text>
+    <text x="638" y="435" fill="#1f5fa8">→ 100k / 20k / 20k divider → GPIO34</text>
+  </g>
+
+  <!-- legend -->
+  <g font-size="14">
+    <rect x="40" y="500" width="14" height="14" fill="#c0392b"/><text x="62" y="512">A: difference amp ×5.92, DAC → ±10 V drive</text>
+    <rect x="400" y="500" width="14" height="14" fill="#1b7f3b"/><text x="422" y="512">B: V_REF buffer</text>
+    <rect x="560" y="500" width="14" height="14" fill="#1f5fa8"/><text x="582" y="512">C, D: unity followers, node A/B → ADC</text>
+    <text x="470" y="545" text-anchor="middle" font-size="12.5" fill="#666666">Pin numbers per the TI OPA4134 datasheet (SBOS058). Full circuit: docs/images/case1_schematic.png</text>
+  </g>
+</svg>
