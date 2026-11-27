@@ -77,13 +77,17 @@ Ordered roughly by priority. Check items off as they land.
       **2026-11-25: not being built** — the physical build is Case 1 (his ±10 V stage with
       OPA4134PA + DD1718PA ±15 V, `docs/BOM.md`); this stays as the ±5 V alternative.
 
-- [ ] **Case 1 breadboard build (planned 2026-11-25, not built yet):** hole-by-hole wiring and
-      7-step power-up checks in `docs/CASE1_WIRING.md` (layout netlist-checked by
-      `hardware/sim/make_case1_breadboard.py`). Software ready but untested on hardware:
-      `firmware/esp32/case1/case1_frontend` (inverted LUT, A ≈ 5 V default) and
-      `reader.FrontEnd.case1()` (picked from the meta line). Needs 100 kΩ ×2, 22 kΩ ×4, 1 nF ×2
-      on top of `docs/BOM.md` (1 nF ordered 2026-11-25; C5/C6 use 100 pF until it arrives —
-      noise check in `docs/CASE1_WIRING.md` step 6).
+- [x] **Case 1 breadboard build** — built and brought up 2026-11-26/27 (`docs/CASE1_WIRING.md`,
+      wired by node names, not the generated hole layout). Firmware: `case1_frontend` (50 Hz,
+      fallback), `case1_frontend_1k` (1 kHz DMA), `case1_frontend_mf` (1 kHz … 1 Hz by serial
+      command, 2026-11-27). Rr 220 Ω / 1k / 10k / 100k by jumper. Still to do: swap C5/C6 to 1 nF
+      when it arrives, redo zero-cal, re-measure noise.
+- [ ] **Auto-range on the real board** — `hardware/autorange.py` (also `auto` in the board page)
+      measures at 1 kHz, picks frequency + Rr with `synth.auto_range` (the rule synth trains
+      with), asks for the Rr jumper move, checks 1 Hz before calling something a short.
+      Planning is unit-tested; on hardware only the frequency sweep is verified so far (a
+      nonlinear DUT read the same |Z| at all 7 frequencies). Next: a 0.1 µF across frequencies,
+      then 1 nF (Rr 100k) and a big electrolytic (needs low amplitude — not supported yet).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also

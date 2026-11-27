@@ -33,7 +33,10 @@ is.**
   the V-I phase error down from 2.4° to ~0.4° and ADC crosstalk from ~4 % to ~0.1 %; with
   per-channel divider gains, zero-cal and phase labels aligned to node A, a 988 Ω resistor
   (meter) reads 988.8 Ω and verifies GOOD, and the first real capacitor (0.1 µF ceramic, Rr 1k)
-  reads 97.3 nF and verifies C / GOOD (`docs/CASE1_WIRING.md`, ADC step 2).
+  reads 97.3 nF and verifies C / GOOD (`docs/CASE1_WIRING.md`, ADC step 2). Since 2026-11-27
+  `case1_frontend_mf` drives 1 kHz … 1 Hz by serial command (`f <hz>`, 50 points/cycle at every
+  frequency) and `hardware/autorange.py` / board-page `auto` picks frequency + Rr per part with
+  `synth.auto_range`; real-data check: `python3 hardware/eval_real.py` (12/12).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
