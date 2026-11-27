@@ -91,7 +91,10 @@ Ordered roughly by priority. Check items off as they land.
       at Rr 1k, as expected — `docs/CASE1_WIRING.md` ADC step 3). A 988 Ω resistor: auto → 1 kHz
       + Rr 1k, 995 Ω, R / GOOD; across frequencies it reads within ~0.2 % at ≤ 30 Hz but has a
       repeatable ~1 % / up to 1.1° error at 91–333 Hz (+0.7 % at 1 kHz, where the old 1 kHz
-      firmware read +0.08 %) — cause not found yet; next diagnostic: a short-circuit sweep.
+      firmware read +0.08 %) — cause not found yet. A short-circuit sweep shows the channels
+      match when they see the same signal (gain −0.13…−0.25 %, timing < 1 µs), so the error only
+      appears when the two channels see different voltages; parked — re-check the R sweep after
+      the C5/C6 swap.
       Then 1 nF (Rr 100k, needs a jumper move) and a big electrolytic (needs low amplitude —
       not supported yet).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
@@ -124,7 +127,7 @@ Ordered roughly by priority. Check items off as they land.
       from good parts (leaky C, high-ESR C, degraded diode). Still missing L, LED, Zener, and
       milder soft faults.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
-      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 14/14 verdicts correct (too
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 15/15 verdicts correct (too
       few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.
