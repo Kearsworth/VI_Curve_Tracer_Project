@@ -85,9 +85,12 @@ Ordered roughly by priority. Check items off as they land.
 - [ ] **Auto-range on the real board** — `hardware/autorange.py` (also `auto` in the board page)
       measures at 1 kHz, picks frequency + Rr with `synth.auto_range` (the rule synth trains
       with), asks for the Rr jumper move, checks 1 Hz before calling something a short.
-      Planning is unit-tested; on hardware only the frequency sweep is verified so far (a
-      nonlinear DUT read the same |Z| at all 7 frequencies). Next: a 0.1 µF across frequencies,
-      then 1 nF (Rr 100k) and a big electrolytic (needs low amplitude — not supported yet).
+      Planning is unit-tested. On hardware: a nonlinear DUT read the same |Z| at all 7
+      frequencies, and a 0.1 µF ceramic (2026-11-27) was planned at 1 kHz + Rr 1k by itself →
+      100.6 nF, C / GOOD (sweep at Rr 1k: 97–106 nF from 1 kHz to 10 Hz; 3 Hz and 1 Hz unreadable
+      at Rr 1k, as expected — `docs/CASE1_WIRING.md` ADC step 3). Next: a resistor across
+      frequencies (accuracy baseline for this firmware), 1 nF (Rr 100k, needs a jumper move) and
+      a big electrolytic (needs low amplitude — not supported yet).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
@@ -118,7 +121,7 @@ Ordered roughly by priority. Check items off as they land.
       from good parts (leaky C, high-ESR C, degraded diode). Still missing L, LED, Zener, and
       milder soft faults.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
-      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 11/11 verdicts correct (too
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 13/13 verdicts correct (too
       few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.

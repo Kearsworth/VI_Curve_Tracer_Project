@@ -36,7 +36,8 @@ is.**
   reads 97.3 nF and verifies C / GOOD (`docs/CASE1_WIRING.md`, ADC step 2). Since 2026-11-27
   `case1_frontend_mf` drives 1 kHz … 1 Hz by serial command (`f <hz>`, 50 points/cycle at every
   frequency) and `hardware/autorange.py` / board-page `auto` picks frequency + Rr per part with
-  `synth.auto_range`; real-data check: `python3 hardware/eval_real.py` (12/12).
+  `synth.auto_range` (a 0.1 µF: chose 1 kHz + Rr 1k by itself → 100.6 nF, C / GOOD); real-data
+  check: `python3 hardware/eval_real.py` (13/13).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
