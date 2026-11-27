@@ -132,11 +132,13 @@ Ordered roughly by priority. Check items off as they land.
 - [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
       good and (deliberately created) faulty. *Started 2026-11-27:* `hardware/captures/`
       (labels.csv) has R, C, diode, LED good; open, short, reversed diode, reversed LED; and soft
-      faults built from good parts (leaky C, high-ESR C, degraded diode). Still missing L,
-      Zener, and milder soft faults.
+      faults built from good parts (leaky C, high-ESR C, degraded diode). Since 2026-11-27 also
+      24 good resistors 100 Ω – 300 kΩ from a 1 % kit (`hardware/collect.py r`): all GOOD, values
+      within ±1.5 % of a multimeter. Plans ready, not captured yet: `r_oor` (outside the trained
+      range), `esr`, `leak`, `degraded`, `led` (graded soft faults). Still missing L and Zener.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
-      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 18/18 verdicts correct (too
-      few to compare with the ~98 % synthetic number; soft faults are strong versions only).
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 42/42 verdicts correct (still
+      too few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.
 

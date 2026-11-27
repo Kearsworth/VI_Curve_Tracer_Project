@@ -6,9 +6,11 @@ checked on real data and not only on synth (`docs/ROADMAP.md` Phase B).
 - `*.txt` — the text the board prints (meta line, CSV header, rows), replayable with
   `python3 hardware/reader.py --file <capture> --frontend --rr <ohm> --zero <zero-cal> --verify`.
 - `labels.csv` — one row per capture: drive frequency, firmware, front end, Rr actually
-  connected, zero-cal file, component, health (`good` / `faulty` / `zero`), fault, reference
-  value (multimeter / marking) and notes. `zero` rows are zero-cal captures (no DUT): used by
-  other rows, not scored.
+  connected, zero-cal file, component, health (`good` / `faulty` / `zero` / `boundary`), fault,
+  reference value (multimeter / marking) and notes. `zero` rows are zero-cal captures (no DUT):
+  used by other rows, not scored. `boundary` rows are kept but not scored: a part outside
+  synth's trained range, a fault severity between synth's good and faulty ranges, or a capture
+  taken at the wrong Rr (`2026-11-27_mf1k_R1k_at_Rr10k.txt`).
 
 Check the current model on all of them:
 
@@ -21,6 +23,13 @@ and 0.1 µF values, and every verdict), so a synth/feature/reader change that br
 verdict fails the tests.
 
 ## Adding a capture
+
+Batches: `python3 hardware/collect.py <plan>` (plans: `--list`) tells you which part to plug in
+and when to move the Rr jumper, captures one 1 kHz burst per part, prints the value and the
+verdict, saves the capture here and appends its labels.csv row. Run it in a terminal; it
+reads the keyboard.
+
+By hand:
 
 1. Capture in the board pane (Enter). With the 1 kHz firmware the capture starts at the
    board's settings line and is clean (`tools/board_page.py`).
