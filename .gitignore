@@ -5,6 +5,8 @@ venv/
 vi_ml/models/*.joblib
 vi_ml/figs_ml/
 *.png
+# README figures are kept on purpose
+!docs/images/*.png
 data/
 .DS_Store
 .pytest_cache/
