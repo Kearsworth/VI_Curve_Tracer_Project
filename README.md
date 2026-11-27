@@ -8,7 +8,7 @@ names the part type and flags anomalies.
 ![Python 3](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
 ![ESP32](https://img.shields.io/badge/ESP32-Arduino%20core%203.x-E7352C?logo=espressif&logoColor=white)
 ![scikit-learn](https://img.shields.io/badge/scikit--learn-Random%20Forest-F7931E?logo=scikitlearn&logoColor=white)
-![Real captures](https://img.shields.io/badge/real%20captures-42%2F42%20correct-1b7f3b)
+![Real captures](https://img.shields.io/badge/real%20captures-52%2F52%20correct-1b7f3b)
 
 <p align="center">
   <img src="docs/images/case1_breadboard.jpg" width="720" alt="The Case 1 front end on a breadboard">
@@ -24,7 +24,7 @@ names the part type and flags anomalies.
 ![Real V-I signatures and the model's verdicts](docs/images/real_signatures.png)
 
 Each panel is a real capture from [`hardware/captures/`](hardware/captures/). It goes through
-the same calibrate → features → verify path the model was trained with. The model gets all 42
+the same calibrate → features → verify path the model was trained with. The model gets all 52 scored
 labelled captures right (`python3 hardware/eval_real.py`). Figure:
 `python3 hardware/plot_real_signatures.py`.
 
@@ -93,7 +93,7 @@ reasoning are in [`docs/BOM.md`](docs/BOM.md).
 
 | | |
 |---|---|
-| **Real captures** (`hardware/captures/`) | 42/42 verdicts correct. Good: 25 resistors 100 Ω – 300 kΩ, C, diode, LED. Faulty: open, short, reversed diode, reversed LED, leaky C, high-ESR C, degraded diode |
+| **Real captures** (`hardware/captures/`) | 52/52 verdicts correct. Good: 25 resistors 100 Ω – 300 kΩ, C, diode, LED. Faulty: open, short, reversed diode, reversed LED, leaky C, high-ESR C, degraded diode and LED, built at several severities |
 | **Measuring known parts** | 24 resistors of a 1 % kit, 100 Ω – 300 kΩ, auto-ranged: within ±1.5 % of a multimeter. 0.1 µF ceramic → 97–101 nF |
 | **Synthetic test set** (any value, measured board noise) | health ≈ 98 %, type ≈ 100 % on good parts, anomaly ROC-AUC ≈ 0.83 |
 

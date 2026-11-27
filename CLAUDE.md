@@ -38,8 +38,8 @@ is.**
   frequency) and `hardware/autorange.py` / board-page `auto` picks frequency + Rr per part with
   `synth.auto_range` (a 0.1 µF: chose 1 kHz + Rr 1k by itself → 100.6 nF, C / GOOD); a reference
   divider on GPIO32 lets `reader.py` cancel the ADC offset drift since the zero-cal; real-data
-  check: `python3 hardware/eval_real.py` (42/42, incl. 24 good resistors 100 Ω–300 kΩ from a 1 % kit,
-  all GOOD and within ±1.5 % of a multimeter).
+  check: `python3 hardware/eval_real.py` (52/52, incl. 24 good resistors 100 Ω–300 kΩ from a 1 % kit,
+  all GOOD and within ±1.5 % of a multimeter, and graded soft faults built from kit resistors).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →

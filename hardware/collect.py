@@ -29,6 +29,7 @@ import filecmp
 import io
 import os
 import sys
+import time
 import warnings
 
 import numpy as np
@@ -78,12 +79,14 @@ def plans():
                              reference=f"0.1 uF ceramic + {ohm(r)} ohm in series (ESR/X_C ~{ratio:.2f}; synth good "
                                        f"<= 0.06, faulty 0.12-0.75)"))
     p["leak"] = []
+    own = XC_100N_1K / C_BASE_ESR                 # the ceramic's own loss as a parallel R, in X_C (~20)
     for r in (4.7e3, 10e3, 20e3, 47e3):
-        ratio = r / XC_100N_1K
-        health = "faulty" if ratio <= 12.5 else "boundary"
+        ratio = 1 / (XC_100N_1K / r + 1 / own)      # added R in parallel with the C's own loss
+        health = "faulty" if ratio < 11.25 else "boundary"      # synth leak 1.25-12.5, 10 % margin at the edge
         p["leak"].append(dict(slug=f"C100n_par_{ohm(r)}", what=f"C 0.1 µF ขนาน R {ohm(r)} Ω", component="C",
                               health=health, fault="leak", rr=1000.0,
-                              reference=f"0.1 uF ceramic || {ohm(r)} ohm (Rleak/X_C {ratio:.1f}; synth leak 1.25-12.5)"))
+                              reference=f"0.1 uF ceramic || {ohm(r)} ohm (Rleak/X_C {r / XC_100N_1K:.1f}, "
+                                        f"{ratio:.1f} with the C's own loss; synth leak 1.25-12.5)"))
     p["degraded"] = []
     for r in (100, 470, 680, 2.2e3):
         health = "faulty" if 200 <= r <= 800 else "boundary"
@@ -201,10 +204,20 @@ def main(argv=None):
                 continue
             rr = RR_ACTUAL[rr_now]
             try:
-                lines = capture_one(ser)
+                try:
+                    lines = capture_one(ser)
+                except TimeoutError:
+                    # 2026-11-27: the port went silent mid-batch (USB re-enumerated / board hung);
+                    # reopen it, reset the board and try once more
+                    print("    .. no burst: reopening the port and resetting the board")
+                    ser.close()
+                    time.sleep(1.0)
+                    ser.open()
+                    reader.reset_board(ser)
+                    lines = capture_one(ser)
                 raw, out, value, drift = analyse(lines, item, rr, zero)
             except Exception as e:                      # keep the batch going; the part can be redone
-                print(f"    !! {e}")
+                print(f"    !! {e}  (redo it later with --only {item['slug']})")
                 continue
             name = save(lines, item["slug"], date, args.out)
             note = f"collect.py, Rr {rr:g} ohm" + (f"; reads {value.strip()}" if value.strip() else "")
