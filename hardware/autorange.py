@@ -47,6 +47,15 @@ NONLINEAR_THD = 0.15        # harmonics / fundamental of the current: diode ~0.5
 SHORT_RATIO = 0.1           # |Z| / Rr below this at the smallest Rr: short, or a C too big for 1 kHz
 HEADER = "index,t_us,phase_rad,adc_v_counts,adc_i_counts"
 
+# Where the model's verdict applies (judge). synth.auto_range puts |Z|/Rr in [0.5, 2] when it
+# can; values between two Rr decades or at the ends of synth.VALUE_RANGE land at ~0.28-3.2.
+# Outside RATIO_LO..RATIO_HI the model has never seen the shape. Measured 2026-11-27: a good
+# 10 ohm at Rr 221 (0.05) looks like a short, a good 1 Mohm at Rr 101k (9.8) like an open.
+# Both read right as values, so the tester answers OUT_OF_RANGE with the value.
+RATIO_LO, RATIO_HI = 0.25, 4.0
+SHORT_OHM, SHORT_OF_RR = 5.0, 0.01   # a short reads ~1-4 ohm (wire, contacts, 0.25 % channel gain x Rr)
+MIN_SNR = 8.0                        # the current's fundamental vs its noise; an open reads ~1.5
+
 
 # ---------------------------------------------------------------- analysis (no hardware)
 def lockin_z(raw):
@@ -61,6 +70,63 @@ def current_thd(raw):
     i = calibrate.calibrate(raw)[:, 1]
     h = np.abs(np.fft.rfft(i - i.mean()))
     return float(np.sqrt(np.sum(h[2:6] ** 2)) / (h[1] + 1e-12))
+
+
+def current_snr(raw):
+    """Drive-frequency current amplitude over its noise (lock-in): ~1.5 for an open socket,
+    90+ for a 1 Mohm resistor at Rr 101k, hundreds for parts in range (2026-11-27)."""
+    i, ph = raw["i"], raw["phase"]
+    i1 = 2 * np.mean(i * np.exp(-1j * ph))
+    resid = i - i.mean() - np.real(i1 * np.exp(1j * ph))
+    return float(abs(i1) / (np.std(resid) * np.sqrt(2 / len(i)) + 1e-30))
+
+
+def judge(raw, ml):
+    """
+    The tester's final answer for one capture: the model's verdict where it applies, otherwise
+    an answer from the lock-in value. `ml` is verify.verify(raw). Returns a dict with:
+      verdict  GOOD / FAULTY / OUT_OF_RANGE
+      range    ok / open / short / below / above / nonlinear
+      reason   one line for a person
+      z_ohm, ratio (|Z|/Rr), snr
+    - no current above the noise: open (FAULTY)
+    - nonlinear part (diode, LED, Zener): the model's verdict. They are measured at the
+      training condition, so there's no range question.
+    - |Z| under max(5 ohm, 1 % of Rr): short (FAULTY)
+    - |Z|/Rr outside RATIO_LO..RATIO_HI: OUT_OF_RANGE with the value. The model can't judge
+      that shape at this Rr / frequency.
+    - otherwise: the model's verdict
+    """
+    rr = float(raw["Rr"])
+    z = lockin_z(raw)
+    ratio, snr = abs(z) / rr, current_snr(raw)
+    base = {"z_ohm": float(abs(z)), "ratio": float(ratio), "snr": snr, "ml": ml}
+    if snr < MIN_SNR:
+        return {**base, "verdict": "FAULTY", "range": "open", "reason": "no measurable current: open"}
+    if current_thd(raw) > NONLINEAR_THD:
+        return {**base, "verdict": ml["verdict"], "range": "nonlinear", "reason": "nonlinear part: model verdict"}
+    if abs(z) < max(SHORT_OHM, SHORT_OF_RR * rr):
+        return {**base, "verdict": "FAULTY", "range": "short", "reason": f"|Z| {abs(z):.1f} ohm: short"}
+    if ratio < RATIO_LO or ratio > RATIO_HI:
+        side = "below" if ratio < RATIO_LO else "above"
+        # reactive only if X stands clear of the ~1 % of Rr error floor (channel gain/timing): a
+        # 10 ohm resistor at Rr 221 shows ~1 ohm of fake X, which is 10 % of its |Z|
+        reactive = abs(z.imag) > 0.1 * abs(z) and abs(z.imag) > 0.02 * rr
+        at_limit = (rr <= 1.05 * min(DEFAULT_RR_VALUES)) if side == "below" else (rr >= 0.95 * max(DEFAULT_RR_VALUES))
+        if reactive:
+            hint = "another drive frequency (run auto-range)"
+        elif at_limit:
+            hint = "nothing this board has: outside its range for resistive parts"
+        else:
+            hint = "a smaller Rr" if side == "below" else "a larger Rr"
+        return {**base, "verdict": "OUT_OF_RANGE", "range": side,
+                "reason": f"|Z| {fmt_ohm(abs(z))} is {side} what Rr {fmt_ohm(rr)} can judge "
+                          f"(|Z|/Rr {ratio:.2f}, judged {RATIO_LO}-{RATIO_HI}); needs {hint}"}
+    return {**base, "verdict": ml["verdict"], "range": "ok", "reason": "in range: model verdict"}
+
+
+def fmt_ohm(r):
+    return f"{r / 1e6:.3g} Mohm" if r >= 1e6 else f"{r / 1e3:.3g} kohm" if r >= 1e3 else f"{r:.3g} ohm"
 
 
 def z_model(z, f):
@@ -213,8 +279,11 @@ def main(argv=None):
         import warnings
         warnings.filterwarnings("ignore", category=UserWarning)
         import verify
-        verdict = str(verify.verify(raw))
-        print(f"    {verdict}")
+        ml = verify.verify(raw)
+        final = judge(raw, ml)
+        verdict = f"{ml}\n=> {final['verdict']} ({final['range']}): {final['reason']}"
+        print(f"    {ml}")
+        print(f"    => {final['verdict']} ({final['range']}): {final['reason']}")
     if settings:
         settings["rr"] = rr_now
         with open(SETTINGS, "w") as fh:

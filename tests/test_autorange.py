@@ -61,3 +61,45 @@ def test_harmonics_separate_diodes_from_linear_parts():
         assert max(thd[c]) < autorange.NONLINEAR_THD, (c, max(thd[c]))
     for c in ("D", "LED"):
         assert min(thd[c]) > autorange.NONLINEAR_THD, (c, min(thd[c]))
+
+
+# ---- judge(): the model's verdict only where it applies (real captures, 2026-11-27) ----------
+ML = {"verdict": "ML"}          # stand-in: judge passes the model's verdict through unchanged
+
+
+def _judge(name):
+    import eval_real
+    row = next(r for r in eval_real.load_labels() if r["file"] == name)
+    return autorange.judge(eval_real.raw_for(row), ML)
+
+
+@pytest.mark.parametrize("name, verdict, rng", [
+    ("2026-11-27_mf1k_R10.txt", "OUT_OF_RANGE", "below"),           # good 10 ohm at Rr 221: short-like shape
+    ("2026-11-27_mf1k_R47.txt", "OUT_OF_RANGE", "below"),
+    ("2026-11-27_mf1k_R1k_at_Rr10k.txt", "OUT_OF_RANGE", "below"),  # right part, wrong Rr
+    ("2026-11-27_mf1k_R470k.txt", "OUT_OF_RANGE", "above"),
+    ("2026-11-27_mf1k_R1M.txt", "OUT_OF_RANGE", "above"),           # good 1 Mohm at Rr 101k: open-like shape
+    ("2026-11-27_1k_open.txt", "FAULTY", "open"),
+    ("2026-11-27_1k_short.txt", "FAULTY", "short"),
+    ("2026-11-27_mf1k_short.txt", "FAULTY", "short"),
+    ("2026-11-27_mf1k_R100.txt", "ML", "ok"),                       # ends of the trained range stay with the model
+    ("2026-11-27_mf1k_R300k.txt", "ML", "ok"),
+    ("2026-11-27_mf1k_R3.3k.txt", "ML", "ok"),
+    ("2026-11-27_1k_C100n.txt", "ML", "ok"),
+    ("2026-11-27_mf1k_LED_fwd_ref.txt", "ML", "nonlinear"),
+    ("2026-11-27_1k_D1N4148_rev.txt", "ML", "nonlinear"),
+])
+def test_judge_on_real_captures(name, verdict, rng):
+    out = _judge(name)
+    assert (out["verdict"], out["range"]) == (verdict, rng), out["reason"]
+
+
+def test_judge_keeps_every_scored_real_capture_with_the_model():
+    # the range rule must not take over any part the model is scored on
+    import eval_real
+    for row in eval_real.load_labels():
+        if row["health"] in ("good", "faulty"):
+            out = autorange.judge(eval_real.raw_for(row), ML)
+            assert out["verdict"] in ("ML", "FAULTY"), (row["file"], out["reason"])
+            if out["verdict"] == "FAULTY":
+                assert row["health"] == "faulty", (row["file"], out["reason"])

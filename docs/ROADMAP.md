@@ -138,8 +138,9 @@ Ordered roughly by priority. Check items off as they land.
       `degraded`, `led`, 16 parts): every scored one right, and the model's real-data boundaries
       match synth's ranges (`docs/CASE1_WIRING.md` ADC step 3). Outside the trained range
       (`r_oor`: 10 Ω, 47 Ω, 470k, 1M) the values are still right but the model calls the
-      extremes FAULTY (short-/open-like shapes) → next: an "out of range" answer from the lock-in
-      value. Still missing L and Zener.
+      extremes FAULTY (short-/open-like shapes). Done: `autorange.judge` answers OUT_OF_RANGE with the
+      value when |Z|/Rr is outside 0.25–4, open/short from the current and |Z|, and the model's
+      verdict everywhere else (all 52 scored captures stay with the model). Still missing L and Zener.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
       *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 52/52 verdicts correct (still
       too few to compare with the ~98 % synthetic number; soft faults are strong versions only).

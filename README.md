@@ -54,6 +54,9 @@ flowchart LR
   generated with.
 - **Offset drift is cancelled.** A reference divider on GPIO32 is read after every burst. Any
   drift of the ADC offsets since the zero-cal is subtracted automatically.
+- **It says when it can't judge.** If |Z|/Rr falls outside what the model was trained on (0.25–4),
+  the tester answers **OUT_OF_RANGE** with the measured value, instead of guessing FAULTY.
+  Example: a good 10 Ω or 1 MΩ resistor.
 - **The model:** 360 points indexed by drive phase, then 14 interpretable features, then a
   Random Forest (health, type) and an Isolation Forest (anomaly). The reasons are in
   [`docs/DESIGN.md`](docs/DESIGN.md).

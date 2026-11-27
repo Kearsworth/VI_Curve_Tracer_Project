@@ -228,6 +228,9 @@ def main(argv=None):
             print(f"    {value.strip() or 'nonlinear':>24s}  →  {out['type']} / {out['verdict']}{mark}  "
                   f"(p_faulty {p_faulty:.2f}, A {raw['A']:.2f} V, drift {drift if drift is None else f'{drift:+.1f}'})"
                   f"  -> {name}")
+            final = autorange.judge(raw, out)
+            if final["verdict"] != out["verdict"] or final["range"] not in ("ok", "nonlinear"):
+                print(f"    => tester answer: {final['verdict']} ({final['range']}): {final['reason']}")
             done.append((item, out["verdict"], expect))
     scored = [d for d in done if d[2] != "?"]
     right = sum(v == e for _, v, e in scored)
