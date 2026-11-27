@@ -88,9 +88,12 @@ Ordered roughly by priority. Check items off as they land.
       Planning is unit-tested. On hardware: a nonlinear DUT read the same |Z| at all 7
       frequencies, and a 0.1 µF ceramic (2026-11-27) was planned at 1 kHz + Rr 1k by itself →
       100.6 nF, C / GOOD (sweep at Rr 1k: 97–106 nF from 1 kHz to 10 Hz; 3 Hz and 1 Hz unreadable
-      at Rr 1k, as expected — `docs/CASE1_WIRING.md` ADC step 3). Next: a resistor across
-      frequencies (accuracy baseline for this firmware), 1 nF (Rr 100k, needs a jumper move) and
-      a big electrolytic (needs low amplitude — not supported yet).
+      at Rr 1k, as expected — `docs/CASE1_WIRING.md` ADC step 3). A 988 Ω resistor: auto → 1 kHz
+      + Rr 1k, 995 Ω, R / GOOD; across frequencies it reads within ~0.2 % at ≤ 30 Hz but has a
+      repeatable ~1 % / up to 1.1° error at 91–333 Hz (+0.7 % at 1 kHz, where the old 1 kHz
+      firmware read +0.08 %) — cause not found yet; next diagnostic: a short-circuit sweep.
+      Then 1 nF (Rr 100k, needs a jumper move) and a big electrolytic (needs low amplitude —
+      not supported yet).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
@@ -121,7 +124,7 @@ Ordered roughly by priority. Check items off as they land.
       from good parts (leaky C, high-ESR C, degraded diode). Still missing L, LED, Zener, and
       milder soft faults.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
-      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 13/13 verdicts correct (too
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 14/14 verdicts correct (too
       few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.
