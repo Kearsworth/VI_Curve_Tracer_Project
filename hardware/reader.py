@@ -509,7 +509,12 @@ def main(argv=None):
     if args.verify:
         sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "vi_ml"))
         import verify
-        print(verify.verify(raw))
+        ml = verify.verify(raw)
+        print(ml)
+        if args.frontend:
+            import autorange
+            final = autorange.judge(raw, ml)
+            print(f"=> {final['verdict']} ({final['range']}): {final['reason']}")
 
 
 if __name__ == "__main__":

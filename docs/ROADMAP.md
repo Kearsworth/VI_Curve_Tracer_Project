@@ -136,8 +136,11 @@ Ordered roughly by priority. Check items off as they land.
       24 good resistors 100 Ω – 300 kΩ from a 1 % kit (`hardware/collect.py r`): all GOOD, values
       within ±1.5 % of a multimeter. Graded soft faults from kit resistors (`esr`, `leak`,
       `degraded`, `led`, 16 parts): every scored one right, and the model's real-data boundaries
-      match synth's ranges (`docs/CASE1_WIRING.md` ADC step 3). Not captured yet: `r_oor`
-      (outside the trained range). Still missing L and Zener.
+      match synth's ranges (`docs/CASE1_WIRING.md` ADC step 3). Outside the trained range
+      (`r_oor`: 10 Ω, 47 Ω, 470k, 1M) the values are still right but the model calls the
+      extremes FAULTY (short-/open-like shapes). Done: `autorange.judge` answers OUT_OF_RANGE with the
+      value when |Z|/Rr is outside 0.25–4, open/short from the current and |Z|, and the model's
+      verdict everywhere else (all 52 scored captures stay with the model). Still missing L and Zener.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
       *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 52/52 verdicts correct (still
       too few to compare with the ~98 % synthetic number; soft faults are strong versions only).
