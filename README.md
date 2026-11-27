@@ -1,36 +1,114 @@
 # AI Electronic Components Tester (COE2026-15)
 
-Decide whether an electronic component is **good or faulty** from its **V-I signature**,
-using a machine-learning pipeline. A V-I curve tracer (ESP32-based) captures the signature;
-the software calibrates it, extracts features, and classifies it.
+**Is this component good or faulty?** An ESP32-based V-I curve tracer drives the part with a
+sine wave and records the voltage-current loop it traces, its **V-I signature**. A
+machine-learning model then decides **GOOD / FAULTY** whatever the part's value, and also
+names the part type and flags anomalies.
 
-> **New here (human or AI)?** Read `CLAUDE.md` first for the full picture, then `docs/`.
+![Python 3](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white)
+![ESP32](https://img.shields.io/badge/ESP32-Arduino%20core%203.x-E7352C?logo=espressif&logoColor=white)
+![scikit-learn](https://img.shields.io/badge/scikit--learn-Random%20Forest-F7931E?logo=scikitlearn&logoColor=white)
+![Real captures](https://img.shields.io/badge/real%20captures-18%2F18%20correct-1b7f3b)
+
+<p align="center">
+  <img src="docs/images/case1_breadboard.jpg" width="720" alt="The Case 1 front end on a breadboard">
+  <br>
+  <em>The front end we built on a breadboard: OPA4134PA quad op-amp (left), DD1718PA ±15 V
+  module (centre), ESP32 DevKit (back).</em>
+</p>
+
+> **New here (human or AI)?** Read [`CLAUDE.md`](CLAUDE.md) first, then [`docs/`](docs/).
+
+## Real signatures from the board
+
+![Real V-I signatures and the model's verdicts](docs/images/real_signatures.png)
+
+Each panel is a real capture from [`hardware/captures/`](hardware/captures/). It goes through
+the same calibrate → features → verify path the model was trained with. The model gets all 18
+labelled captures right (`python3 hardware/eval_real.py`). Figure:
+`python3 hardware/plot_real_signatures.py`.
+
+## How it works
+
+```mermaid
+flowchart LR
+  subgraph ESP32["ESP32 — one chip, two cores"]
+    DAC["core 0: DAC sine<br/>1 kHz … 1 Hz"]
+    ADC["core 1: ADC (DMA)<br/>node A · node B · GPIO32 reference"]
+  end
+  DAC -- "0–3.3 V" --> AMP["ch A: difference amp<br/>×5.92 → up to ±10 V"]
+  AMP --> NA(("node A")) --> DUT["DUT"] --> NB(("node B")) --> RR["Rr<br/>220 Ω / 1k / 10k / 100k"] --> GND["GND"]
+  NA --> FC["ch C follower + divider"] --> ADC
+  NB --> FD["ch D follower + divider"] --> ADC
+  ADC -- "USB serial (CSV bursts)" --> PC["PC: reader → calibrate → features → Random Forest"]
+  PC --> OUT{{"GOOD / FAULTY<br/>+ type, anomaly"}}
+```
+
+- **Both ends of the DUT are measured.** The ADC reads node A and node B, so
+  V<sub>DUT</sub> = V<sub>A</sub> − V<sub>B</sub> and I = V<sub>B</sub> / Rr. Errors in the
+  drive amplifier's gain and offset don't reach the result.
+- **The phase comes from the drive.** Both cores share one hardware clock, so every sample is
+  labelled with the drive phase. No sync wire is needed.
+- **Any value, auto-ranged.** [`hardware/autorange.py`](hardware/autorange.py) picks the drive
+  frequency and Rr for each part so that |Z| ≈ Rr. It uses the same rule the training data is
+  generated with.
+- **Offset drift is cancelled.** A reference divider on GPIO32 is read after every burst. Any
+  drift of the ADC offsets since the zero-cal is subtracted automatically.
+- **The model:** 360 points indexed by drive phase, then 14 interpretable features, then a
+  Random Forest (health, type) and an Isolation Forest (anomaly). The reasons are in
+  [`docs/DESIGN.md`](docs/DESIGN.md).
+
+### Schematic
+
+![Case 1 analog front end schematic](docs/images/case1_schematic.png)
+
+Values measured on the built board are shown in brackets. Wiring and the 7-step power-up
+checks are in [`docs/CASE1_WIRING.md`](docs/CASE1_WIRING.md). The parts list and gain
+reasoning are in [`docs/BOM.md`](docs/BOM.md).
+
+## Results so far
+
+| | |
+|---|---|
+| **Real captures** (`hardware/captures/`) | 18/18 verdicts correct. Good: R, C, diode, LED. Faulty: open, short, reversed diode, reversed LED, leaky C, high-ESR C, degraded diode |
+| **Measuring known parts** | 988 Ω resistor (multimeter) → 988.8 Ω. 0.1 µF ceramic → 97–101 nF |
+| **Synthetic test set** (any value, measured board noise) | health ≈ 98 %, type ≈ 100 % on good parts, anomaly ROC-AUC ≈ 0.83 |
+
+Still open:
+- Soft faults (high ESR, shorted turns, Zener leak) are the weakest classes, at ~82–85 % on
+  synthetic data.
+- The multi-frequency firmware reads values ~1 % off at 91–333 Hz.
+- Electrolytic capacitors need a lower drive amplitude.
+
+The live task list is in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Quick start
 
+No hardware needed:
+
 ```bash
 pip install -r requirements.txt
-cd vi_ml
-python3 demo.py         # train + test end-to-end, prints accuracy
+cd vi_ml && python3 demo.py        # train + evaluate on synthetic data
+cd .. && pytest -q                 # invariant tests
+python3 hardware/eval_real.py      # the model on the labelled real captures
 ```
 
-Run the tests (from repo root):
+With the board:
+1. Flash [`firmware/esp32/case1/case1_frontend_mf`](firmware/esp32/case1/case1_frontend_mf)
+   to an ESP32 DevKit V1 (board "DOIT ESP32 DEVKIT V1", esp32 Arduino core 3.x).
+2. Run `python3 hardware/autorange.py`. It measures the part in the DUT spot, picks the
+   frequency and Rr, and prints the verdict.
 
-```bash
-pytest -q
+Zero-cal and the full bring-up are described in [`docs/CASE1_WIRING.md`](docs/CASE1_WIRING.md).
+
+## Repository layout
+
+```text
+vi_ml/            ML pipeline: synth · calibrate · features · train · verify · demo
+hardware/         reader.py (serial → raw dict) · autorange.py · eval_real.py · demo_r.py
+  captures/       labelled real captures + labels.csv
+  sim/            circuit checks: ngspice/Falstad, breadboard layout and schematic generators
+firmware/esp32/   case1/ (the board in use) · dual_core/ · loopback/ · standalone/ · dual_board/ (retired)
+tests/            invariant tests (pytest)
+docs/             DESIGN · DATA_CONTRACT · ROADMAP · CASE1_WIRING · BOM · LITERATURE · PIPELINE_EXPLAINED
 ```
-
-## Layout
-
-- `vi_ml/` — the ML pipeline: `synth`, `calibrate`, `features`, `train`, `verify`, `demo`.
-- `tests/` — invariant tests (run after any change to the pipeline).
-- `hardware/` — how serial data becomes the pipeline's input (`reader.py`).
-- `firmware/esp32/` — plan for the ESP32 firmware (DAC out / ADC in / serial / loopback).
-- `docs/` — `DESIGN.md` (why), `DATA_CONTRACT.md` (formats), `ROADMAP.md` (tasks),
-  `WORKING_WITH_CLAUDE.md` (how to use Claude Code here).
-
-## Status
-
-ML pipeline works on synthetic data (~95% good/faulty over the full R/C/L value range with
-simulated board noise; see `CLAUDE.md` §2). Hardware is in progress; we
-currently test the data path with an ADC/DAC loopback. See `CLAUDE.md` §2.
