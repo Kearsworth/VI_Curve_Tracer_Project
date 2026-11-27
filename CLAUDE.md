@@ -19,8 +19,26 @@ it real data.
 full checklist. This section is a 60-second summary, not the source of truth; ROADMAP.md
 is.**
 
-- **ML pipeline: working** on **synthetic data**. Health (good/faulty) ≈ 97.8%,
-  component-type ≈ 100% (only meaningful for good parts), anomaly detector ROC-AUC ≈ 0.87.
+- **ML pipeline: working** on **synthetic data**. Since 2026-11-27 `synth.py` draws R/C/L over
+  the full value range (R 100 Ω–300 kΩ, C 1 nF–1000 µF, L 10 mH–10 H) with a simulated
+  auto-range (drive frequency + Rr chosen so |Z|/Rr ≈ 1) and the measured Case 1 board
+  imperfections (node noise/offset/quantization, ADC crosstalk, V-I skew, ADC spikes, 40–60
+  points/cycle, phase-locked sampling like the real board). On that harder data with the 14
+  features: health ≈ 98% (good parts called GOOD 99.5%), type ≈ 100% (good parts), anomaly
+  ROC-AUC ≈ 0.83. The older one-value model
+  (97.8% on its own data) scores ≈ 75% on it, mostly by calling good parts of other values
+  FAULTY. First real-board check (50 Hz firmware): 4/4
+  good-resistor captures → GOOD, 1/1 open socket → FAULTY. A 1 kHz DMA firmware
+  (`firmware/esp32/case1/case1_frontend_1k`, 2026-11-27) also reads a 1k resistor as GOOD, with
+  the V-I phase error down from 2.4° to ~0.4° and ADC crosstalk from ~4 % to ~0.1 %; with
+  per-channel divider gains, zero-cal and phase labels aligned to node A, a 988 Ω resistor
+  (meter) reads 988.8 Ω and verifies GOOD, and the first real capacitor (0.1 µF ceramic, Rr 1k)
+  reads 97.3 nF and verifies C / GOOD (`docs/CASE1_WIRING.md`, ADC step 2). Since 2026-11-27
+  `case1_frontend_mf` drives 1 kHz … 1 Hz by serial command (`f <hz>`, 50 points/cycle at every
+  frequency) and `hardware/autorange.py` / board-page `auto` picks frequency + Rr per part with
+  `synth.auto_range` (a 0.1 µF: chose 1 kHz + Rr 1k by itself → 100.6 nF, C / GOOD); a reference
+  divider on GPIO32 lets `reader.py` cancel the ADC offset drift since the zero-cal; real-data
+  check: `python3 hardware/eval_real.py` (18/18).
 - **Real-hardware capture: working**, as of 2026-09-29/30 — two ESP32 boards
   (`firmware/esp32/dual_board/`), one faking a V-I signature, one capturing it on two real
   ADC channels with sync-derived phase. Real captures flow through `hardware/reader.py` →
@@ -38,6 +56,18 @@ is.**
   blocker now: the **return path** (±10V DUT response → 0–3.3V for the ADC) is still
   unconfirmed. See `firmware/esp32/README.md` "Dual-core single-board plan" and
   `docs/ROADMAP.md` Phase A.
+- **Front end being built (decided 2026-11-25): Case 1** — Dr. Wathis's 0–3.3V→±10V drive
+  stage, rebuilt with an **OPA4134PA** (4 channels: A drive ×6.1 difference amp, B V_REF
+  buffer, C/D followers on node A/B for the return path) on ±15V rails from a **DD1718PA**.
+  Parts and why: `docs/BOM.md` (its §4 sketch is wrong as drawn — see the note there).
+  **Hole-by-hole wiring + 7-step power-up checks: `docs/CASE1_WIRING.md`** (layout generated
+  and netlist-checked by `hardware/sim/make_case1_breadboard.py`). Software for it:
+  `firmware/esp32/case1/case1_frontend` (inverted LUT, A ≈ 5V default) and
+  `reader.FrontEnd.case1()`, auto-picked from the meta line's `frontend_case=1`. **Status
+  2026-11-25: planned, not built; software untested on hardware; C5/C6 are 100 pF until the
+  ordered 1 nF arrive.** The ±5V NE5532 design in `docs/STANDALONE_TESTER_PLAN.md` is the
+  unbuilt alternative — don't mix the two BOMs. At ±10V the model is out-of-distribution for
+  D/LED/Zener until `synth.py` is retrained at A=10 (`docs/BOM.md` §5, ROADMAP Phase B).
 - **Not done yet:** connecting the real circuit (blocked on the above), UI, soft-fault
   improvements. See `docs/ROADMAP.md` for the live task list — this file is a summary of it,
   not a duplicate; when the two disagree, ROADMAP.md is right.
@@ -54,7 +84,7 @@ is.**
    signature  (360 × 2 array)
         │  features.py    → 12 interpretable geometric/electrical features
         ▼
-   feature vector (12,)
+   feature vector (14,)
         │  train.py (offline)  → fits Random Forest + Isolation Forest, saves to models/
         │  verify.py (online)  → loads models, predicts
         ▼
@@ -70,7 +100,7 @@ inference time. If you change one, it must stay identical for both, or predictio
 vi_ml/            The ML pipeline (Python, run from inside this folder)
   synth.py        Generates synthetic signatures for 6 components (good + faulty)
   calibrate.py    raw dict → 360-point normalized signature   (Periodic Resampling)
-  features.py     signature → 12-feature vector
+  features.py     signature → 14-feature vector
   train.py        build dataset → train 3 models → save to models/*.joblib
   verify.py       load models → verify(raw) → {type, verdict, confidence, anomaly}
   demo.py         end-to-end: train then verify a few fresh samples
@@ -78,9 +108,13 @@ vi_ml/            The ML pipeline (Python, run from inside this folder)
   models/         trained models land here (git-ignored)
 tests/            pytest tests that encode the invariants (run these after changes!)
 hardware/         reader.py (serial frames → raw dict), live_pipeline_demo.py (live two-board
-                  dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py
+                  dashboard), dual_board_signature_check.py, adc_check.py, live_plot_demo.py,
+                  demo_r.py (live R meter), eval_real.py (model on labelled real captures)
+  captures/       labelled real Case 1 captures + labels.csv (also run by
+                  tests/test_real_captures.py; how to add one: captures/README.md)
 firmware/esp32/   loopback/ (single-board, verified) and dual_board/ (two-board, verified) —
-                  both implemented and run on real hardware, not just spec anymore
+                  both implemented and run on real hardware, not just spec anymore;
+                  case1/case1_frontend (Case 1 front end, compiles, not yet on hardware)
 CONTEXT.md        glossary for hardware terms (DUT, sense resistor, signature generator,
                   capture unit, sync pulse, ...) — read before using these terms loosely
 docs/             DESIGN.md (the "why"), DATA_CONTRACT.md (formats), ROADMAP.md (tasks,
@@ -128,14 +162,23 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
    "good" from shape alone; catching that needs a reference-comparison path — roadmap).
 6. **Type prediction is only meaningful when verdict = GOOD.** A shorted/open part
    looks like "short/open", not like its original type. This is expected, not a bug.
-7. **12 features, not 720 raw points.** Interpretable + works with little data. (A CNN
-   could consume raw points later; that's a separate roadmap item.)
+7. **14 interpretable features, not 720 raw points.** Interpretable + works with little data.
+   12 original + 2 soft-fault features added 2026-11-27 with the owner's OK: `off_slope`
+   (blocking-side dI/dV → junction leakage) and `on_res` (conducting-side dV/dI past the knee →
+   degraded diode/LED). (A CNN could consume raw points later; separate roadmap item.)
 
 ## 7. Known limitations (state these honestly; don't hide them)
 
 - All numbers are on **synthetic data**; real hardware will differ — must re-validate.
-- **Soft faults are the weak spot:** degraded diode ~72%, Zener Vz-shift ~75%, leaky
-  cap ~82% recall (hard faults are ~100%). Improving these is a roadmap item.
+- **Soft faults are the weak spot** (2026-11-27 synth, 14 features): high-ESR cap ~82%,
+  shorted turns ~83%, Zener leak ~85%, leaky cap ~93%, degraded diode/LED and reversed diode
+  ~95–96%; hard faults ~100%. "Good" C allows DF up to 6% (class-II ceramics measured ~4–5%);
+  healthy aluminium electrolytics can reach DF 10–20%, which this synth would call high-ESR —
+  ESR limits really depend on the capacitor type (needs the reference/type path).
+- **"Any value" assumes auto-ranging hardware that doesn't exist yet:** synth picks the drive
+  frequency from 1 Hz–1 kHz and Rr from 220 Ω/1k/10k/100k (`synth.TEST_FREQS_HZ`,
+  `RR_OPTIONS`). The board today has 1k/10k/100k by jumper and one drive frequency per
+  firmware, so big C (above ~10 µF) and small L can't yet be measured for real.
 - Requires knowing capture settings (A, Rr) for normalization — they travel with the raw data.
 
 ## 8. Conventions
@@ -152,8 +195,9 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 
 ## 9. What we're working on next (docs/ROADMAP.md is the real list — this is a pointer, not a copy)
 
-1. Connect the real circuit: needs the sync-plan fallback tested (dual_board/README.md item 3)
-   once the real voltage source + drive stage + DUT are available.
+1. Build the Case 1 front end on breadboard step by step per `docs/CASE1_WIRING.md`, then
+   capture real R/D signatures with `case1_frontend` (the sync-plan item that used to be here
+   is retired — see `dual_board/README.md`).
 2. ADC decision experiment (internal vs. external) — not yet run.
 3. Validate the trained model on real captured data; retrain/fine-tune as needed.
 4. Soft-fault features (reverse-leakage slope, ESR tilt, knee sharpness) + a confidence

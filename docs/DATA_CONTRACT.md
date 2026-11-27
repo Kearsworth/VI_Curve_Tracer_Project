@@ -18,13 +18,19 @@ raw = {
 
 - `M` (number of raw samples) may vary between captures — that's fine, calibration fixes it.
 - `phase` comes from the drive signal (known from the frequency / SYNC), NOT estimated from
-  the loop geometry. In synth this is `omega * t`.
+  the loop geometry. In synth this is `omega * t`. For the front-end boards the reader then
+  shifts the labels by one constant so the measured drive node A reads `+A*sin(phase)`
+  (`reader.drive_phase_shift`): the firmware's clock-based labels carry a fixed timing offset
+  (~14° at 1 kHz, ~2.6° at 50 Hz, 2026-11-27), and node A is the drive itself.
 - `A` and `Rr` are needed for normalization and must travel with the capture.
 - `A` is the **measured** peak at the drive node, in the same real-volt units as `v` — not the
-  DAC's nominal setting (the firmware's `A_nominal_v`). The synthetic data is trained at
-  `A = 5 V`, and a diode/LED knee sits at a fixed absolute voltage, so real captures are
-  levelled (DAC swing adjusted, capture, measure `A`, repeat) until the measured `A` is 5 V ±
-  1–2%. Loopback has no drive-node channel yet, so it still falls back to the nominal value.
+  DAC's nominal setting (the firmware's `A_nominal_v`). Since 2026-11-27 the synthetic data
+  spans `A = 4–6 V` (it was a fixed 5 V); a diode/LED knee sits at a fixed absolute voltage,
+  so keep real captures inside that band. Loopback has no drive-node channel yet, so it
+  still falls back to the nominal value.
+- synth-only extra keys (labels/metadata, ignored by calibrate/verify): `component`,
+  `health`, `fault`, `F` (drive frequency the simulated auto-range picked, Hz), `value`
+  (R Ω / C F / L H, diode/LED Vf, Zener Vz).
 
 ## 2. Calibrated signature (output of calibrate.py)
 
@@ -39,12 +45,17 @@ signature = np.ndarray  # shape (360, 2), dtype float
 
 ## 3. Feature vector (output of features.py)
 
-`extract(signature) -> np.ndarray` of shape (12,), order given by `features.FEATURE_NAMES`:
+`extract(signature) -> np.ndarray` of shape (14,), order given by `features.FEATURE_NAMES`:
 
 ```
 signed_area, abs_area, slope0, phaseVI, aspect, knee_V,
-symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio
+symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio,
+off_slope, on_res          # added 2026-11-27 (soft faults)
 ```
+
+off_slope = dI/dV on the blocking side at low current (junction leakage; ~0 when healthy);
+on_res = dV/dI on the conducting side past the knee (series resistance of a degraded
+diode/LED). Both use the side that conducts more, so a reversed part still works.
 
 Meaning (short): signed_area = loop area with sign (rotation ⇒ C vs L); abs_area = size;
 slope0 = dI/dV at origin (conductance); phaseVI = V–I phase angle (deg); aspect = minor/major
@@ -73,7 +84,10 @@ verify(raw) -> {
 
 Components: `R, C, L, D, LED, Z`.
 Faults per component (shape-changing only): open, short (all); esr, leak (C); dcr,
-shorted_turns (L); reversed, degraded (D, LED); reversed, vz_shift (Z).
+shorted_turns (L); reversed, degraded (D, LED); reversed, leak (Z). (`vz_shift` was replaced
+by `leak` on 2026-11-27: with Vz drawn over 2.4–5.1 V a shifted Vz looks like a good Zener of
+another value, i.e. value drift — design decision #5.) ESR/leak/DCR are defined relative to
+the part's own reactance at its test frequency, not in fixed ohms.
 
 ## 7. ESP32 → PC serial frame
 
@@ -92,7 +106,9 @@ Preceded once at boot by comment lines (prefixed `#`, skip when parsing) carryin
 settings: `drive_freq_hz`, `lut_size`, `dac_center`, `dac_amplitude_counts`, `A_nominal_v`
 (nominal/uncalibrated drive amplitude — see Stage 2's measured offset/gain note in
 `firmware/esp32/README.md`), `Rr_ohm_placeholder` (loopback has no real sense resistor yet),
-`vref`, `dac_bits`, `adc_bits`, `baud`.
+`vref`, `dac_bits`, `adc_bits`, `baud`. Case 1 firmware (`firmware/esp32/case1/case1_frontend`)
+also sends `frontend_case=1` and `dac_inverted=1`; `reader.py` uses `frontend_case` to pick
+`FrontEnd.case1()` (followers + 100k/22k/22k dividers, no loading term) over the Stage 1 default.
 
 `t_us` was added on top of the originally proposed `index,adc_ch_v,adc_ch_i` shape because
 Stage 3 samples free-running (no fixed-interval timer) — `phase_rad` is computed firmware-side
@@ -107,6 +123,15 @@ fields, but `index` is printed modulo 10000 and `t_us` modulo 100000 µs (meta k
 `index_wrap`, `t_us_wrap`, `sample_period_us`) to keep every line ≤ 28 bytes so 921600 baud
 never saturates. Nothing downstream uses either field except to spot dropped samples, which
 still works on the wrapped difference. `phase_rad` is unaffected (always 0..2π).
+
+**Burst firmware** (`case1_frontend_1k`, `case1_frontend_mf`, 2026-11-27): rows come in bursts.
+Each burst starts with the meta line (`# drive_freq_hz=...`, plus `decim`, `points_per_cycle`,
+`burst_cycles`, `vi_align`) and ends with `# burst=<n> lines= cycles= points= decim= resyncs=
+timeouts= ovf=`. Since 2026-11-27 `case1_frontend_mf` adds `ref_counts=<x>` to that line: the mean
+of ~2000 conversions of the offset-reference divider (GPIO32, a copy of the return-path dividers
+with its input at GND), read right after the burst, on the same calibrated counts scale. `reader.py`
+keeps it as `Capture.ref_counts`, stores it with the zero cal, and adds its move since the zero
+capture to both channels' offsets (`reader.ref_corrected`).
 
 PC side (`hardware/reader.py`, implemented) skips `#` lines, the header, and malformed rows
 (e.g. a half-received first line), keeps only whole drive cycles (first phase wrap → last

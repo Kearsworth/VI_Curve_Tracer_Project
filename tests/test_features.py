@@ -2,11 +2,11 @@
 import numpy as np
 import synth, calibrate, features
 
-def test_twelve_finite_features():
+def test_fourteen_finite_features():
     raw = synth.generate_sample("R", "good", np.random.default_rng(0))
     f = features.extract(calibrate.calibrate(raw))
-    assert f.shape == (12,)
-    assert len(features.FEATURE_NAMES) == 12
+    assert f.shape == (14,)
+    assert len(features.FEATURE_NAMES) == 14
     assert np.isfinite(f).all()
 
 def test_capacitor_and_inductor_have_opposite_rotation():

@@ -156,10 +156,10 @@ wire — nothing else about the downstream code changes.
         ▼
    signature (360 × 2 array)           <- the "shape" — this is the fingerprint
         │
-        │  features.py: reduce the shape to 12 interpretable numbers
+        │  features.py: reduce the shape to 14 interpretable numbers
         │                (loop area, slope, symmetry, knee sharpness, etc.)
         ▼
-   feature vector (12,)
+   feature vector (14,)
         │
         │  train.py (offline, once): fit Random Forest (health + type) and
         │                              Isolation Forest (anomaly) on many

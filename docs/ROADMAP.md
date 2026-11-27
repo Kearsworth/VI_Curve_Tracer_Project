@@ -69,6 +69,42 @@ Ordered roughly by priority. Check items off as they land.
       fallback if chatter) — see `dual_board/README.md` Next steps item 3 for the superseded
       detail, kept for the record.~~
 
+- [ ] **Standalone tester plan (drafted 2026-10-10; Stage 0 simulation passed same day, not built yet):** our own
+      USB-powered front end — ±5 V drive (MT3608 + ICL7660S rails, NE5532), ESP32-selected Rr
+      bank (220 Ω / 1 kΩ / 10 kΩ / 100 kΩ via relays), 50/200/1000 Hz, DMA capture, then ML
+      retrained for selectable settings + auto-range. Stages 0–5 and BOM in
+      `docs/STANDALONE_TESTER_PLAN.md`. Needs Dr. Wathis's OK since it runs alongside his ±10 V stage.
+      **2026-11-25: not being built** — the physical build is Case 1 (his ±10 V stage with
+      OPA4134PA + DD1718PA ±15 V, `docs/BOM.md`); this stays as the ±5 V alternative.
+
+- [x] **Case 1 breadboard build** — built and brought up 2026-11-26/27 (`docs/CASE1_WIRING.md`,
+      wired by node names, not the generated hole layout). Firmware: `case1_frontend` (50 Hz,
+      fallback), `case1_frontend_1k` (1 kHz DMA), `case1_frontend_mf` (1 kHz … 1 Hz by serial
+      command, 2026-11-27). Rr 220 Ω / 1k / 10k / 100k by jumper. Still to do: swap C5/C6 to 1 nF
+      when it arrives, redo zero-cal, re-measure noise.
+- [ ] **Auto-range on the real board** — `hardware/autorange.py` (also `auto` in the board page)
+      measures at 1 kHz, picks frequency + Rr with `synth.auto_range` (the rule synth trains
+      with), asks for the Rr jumper move, checks 1 Hz before calling something a short.
+      Planning is unit-tested. On hardware: a nonlinear DUT read the same |Z| at all 7
+      frequencies, and a 0.1 µF ceramic (2026-11-27) was planned at 1 kHz + Rr 1k by itself →
+      100.6 nF, C / GOOD (sweep at Rr 1k: 97–106 nF from 1 kHz to 10 Hz; 3 Hz and 1 Hz unreadable
+      at Rr 1k, as expected — `docs/CASE1_WIRING.md` ADC step 3). A 988 Ω resistor: auto → 1 kHz
+      + Rr 1k, 995 Ω, R / GOOD; across frequencies it reads within ~0.2 % at ≤ 30 Hz but has a
+      repeatable ~1 % / up to 1.1° error at 91–333 Hz (+0.7 % at 1 kHz, where the old 1 kHz
+      firmware read +0.08 %) — cause not found yet. A short-circuit sweep shows the channels
+      match when they see the same signal (gain −0.13…−0.25 %, timing < 1 µs), so the error only
+      appears when the two channels see different voltages; parked — re-check the R sweep after
+      the C5/C6 swap.
+      Then 1 nF (Rr 100k, needs a jumper move) and a big electrolytic (needs low amplitude —
+      not supported yet).
+- [x] **Offset drift → automatic zero (found and built 2026-11-27):** node offsets moved by up to
+      ~0.25 V within minutes, the same way on both channels (likely the ESP32 3V3 feeding the
+      dividers; the ADC isn't ratiometric). A third divider with its input at GND now sits on
+      GPIO32; `case1_frontend_mf` reads it after every burst (`ref_counts=` on the `# burst=`
+      line) and `reader.py` subtracts its move since the zero capture from both channels. Over a
+      2-minute check the corrected baseline stayed within ~25 mV where the uncorrected one moved
+      26–62 mV. Still to see: a long run (tens of minutes, a power cycle). The zero must be taken
+      with this firmware (`docs/CASE1_WIRING.md` ADC step 3).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
@@ -86,9 +122,21 @@ Ordered roughly by priority. Check items off as they land.
       precision resistor. Fall back to a difference amp across Rr only if the numbers demand it.
 
 ## Phase B — Real data & validation
+- [ ] **Retrain `synth.py` at A = 10 V** (added 2026-11-25) before trusting D/LED/Zener
+      verdicts from the Case 1 ±10 V front end (`docs/BOM.md`). `calibrate.py` divides V by
+      A, so a ~0.6 V diode knee lands at 0.6/5 = 0.12 in training but 0.6/10 = 0.06 at ±10 V:
+      a different normalised shape, i.e. out-of-distribution. R, C, L scale with A and are
+      unaffected. Today `synth.py` uses A = 5 for R/C/L/D/LED and A = 6 for Zener. Either
+      switch to A = 10 or add A = 10 alongside the existing A, then rerun `pytest` (the
+      accuracy-floor test retrains the models). Reasoning: `docs/BOM.md` §5.
 - [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
-      good and (deliberately created) faulty.
+      good and (deliberately created) faulty. *Started 2026-11-27:* `hardware/captures/`
+      (labels.csv) has R, C, diode, LED good; open, short, reversed diode, reversed LED; and soft
+      faults built from good parts (leaky C, high-ESR C, degraded diode). Still missing L,
+      Zener, and milder soft faults.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 18/18 verdicts correct (too
+      few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.
 
@@ -99,7 +147,8 @@ Ordered roughly by priority. Check items off as they land.
       specifically on soft faults. Cheaper to try than new features; do this before or
       alongside the item below.
 - [ ] Add features targeting soft faults: reverse-leakage slope, ESR tilt / loss tangent,
-      diode knee sharpness.
+      diode knee sharpness. *Partly done 2026-11-27:* `off_slope` (reverse leakage) and
+      `on_res` (forward series R) in `features.py`; ESR tilt and knee sharpness still open.
 - [ ] Add a confidence "review band" (e.g. predict_proba in 0.4–0.6 ⇒ flag for human
       review) to catch the low-confidence misses.
 - [ ] Consider a reference-comparison (RMS-distance) path to catch parametric value drift
