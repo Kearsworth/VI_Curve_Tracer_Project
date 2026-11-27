@@ -23,6 +23,14 @@
 //     is atomic; the first SETTLE_CYCLES cycles after a change (and after boot) aren't captured,
 //     so the circuit (e.g. a big C charging through Rr) can settle.
 //
+// Offset reference (added 2026-11-27): the node offsets wander by up to ~0.25 V within minutes,
+// both channels alike (likely the ESP32 3V3 feeding the dividers; the ADC reads against its own
+// reference). A third divider, identical to the return-path ones but with its input at GND,
+// sits on GPIO32 (ADC1_CH4). After every burst the ADC is switched to that one channel for
+// REF_SAMPLES conversions (~20 ms), then back to V/I — the V/I pattern and timing are
+// untouched. The mean goes out as `ref_counts=` on the `# burst=` line; reader.py subtracts its
+// move since the zero capture from both channels' offsets (reader.ref_corrected).
+//
 // Serial commands (send a line, e.g. from autorange.py; Arduino serial monitor works too):
 //   f <hz>      drive frequency; snapped to 1000/M Hz, M = round(1000/hz) in 1..1000
 //   n <cycles>  whole cycles printed per burst (1..32)
@@ -41,6 +49,8 @@
 const int DAC_PIN = 25;                         // DAC1
 const adc_channel_t ADC_V_CH = ADC_CHANNEL_6;   // GPIO34 — P1, node A via follower C
 const adc_channel_t ADC_I_CH = ADC_CHANNEL_7;   // GPIO35 — P2, node B via follower D
+const adc_channel_t ADC_REF_CH = ADC_CHANNEL_4; // GPIO32 — reference divider, input at GND
+const int REF_SAMPLES = 2000;                   // ~20 ms of the reference after every burst
 
 // ---------- Drive ----------
 const int LUT_SIZE = 100;
@@ -73,6 +83,8 @@ int burstCycles = 32;
 bool settlePending = true;
 
 adc_continuous_handle_t adcHandle = nullptr;
+static adc_digi_pattern_config_t patVI[2], patRef[1];     // kept alive: the driver may point at them
+static adc_continuous_config_t cfgVI = {}, cfgRef = {};
 adc_cali_handle_t caliHandle = nullptr;
 bool caliOk = false;
 // raw -> mV for every raw value. The eFuse calibration is NOT a straight line at 12 dB on the
@@ -127,16 +139,21 @@ static void adcSetup() {
   hcfg.conv_frame_size = FRAME_BYTES;
   ESP_ERROR_CHECK(adc_continuous_new_handle(&hcfg, &adcHandle));
 
-  adc_digi_pattern_config_t pat[2] = {};
-  pat[0].atten = ADC_ATTEN_DB_12; pat[0].channel = ADC_V_CH; pat[0].unit = ADC_UNIT_1; pat[0].bit_width = ADC_BITWIDTH_12;
-  pat[1].atten = ADC_ATTEN_DB_12; pat[1].channel = ADC_I_CH; pat[1].unit = ADC_UNIT_1; pat[1].bit_width = ADC_BITWIDTH_12;
-  adc_continuous_config_t cfg = {};
-  cfg.pattern_num = 2;
-  cfg.adc_pattern = pat;
-  cfg.sample_freq_hz = ADC_SAMPLE_HZ;
-  cfg.conv_mode = ADC_CONV_SINGLE_UNIT_1;
-  cfg.format = ADC_DIGI_OUTPUT_FORMAT_TYPE1;
-  ESP_ERROR_CHECK(adc_continuous_config(adcHandle, &cfg));
+  const adc_channel_t viCh[2] = {ADC_V_CH, ADC_I_CH};
+  for (int k = 0; k < 2; k++) {
+    patVI[k].atten = ADC_ATTEN_DB_12; patVI[k].channel = viCh[k]; patVI[k].unit = ADC_UNIT_1; patVI[k].bit_width = ADC_BITWIDTH_12;
+  }
+  patRef[0] = patVI[0];
+  patRef[0].channel = ADC_REF_CH;
+  cfgVI.pattern_num = 2;
+  cfgVI.adc_pattern = patVI;
+  cfgVI.sample_freq_hz = ADC_SAMPLE_HZ;
+  cfgVI.conv_mode = ADC_CONV_SINGLE_UNIT_1;
+  cfgVI.format = ADC_DIGI_OUTPUT_FORMAT_TYPE1;
+  cfgRef = cfgVI;
+  cfgRef.pattern_num = 1;
+  cfgRef.adc_pattern = patRef;
+  ESP_ERROR_CHECK(adc_continuous_config(adcHandle, &cfgVI));
 
   adc_continuous_evt_cbs_t cbs = {};
   cbs.on_conv_done = onFrameDone;
@@ -156,11 +173,38 @@ static void adcSetup() {
   }
 }
 
-static inline int countsFromRaw(float raw) {
+static inline float countsF(float raw) {           // calibrated, on the ideal 3.3 V / 4095 scale
   raw = constrain(raw, 0.0f, 4095.0f);
   int r0 = min((int)raw, 4094);
   float mv = mvTable[r0] + (raw - r0) * (mvTable[r0 + 1] - mvTable[r0]);
-  return constrain((int)lroundf(mv * MV_TO_COUNTS), 0, 4095);
+  return mv * MV_TO_COUNTS;
+}
+
+static inline int countsFromRaw(float raw) {
+  return constrain((int)lroundf(countsF(raw)), 0, 4095);
+}
+
+// Mean raw reading of the reference divider: a short DMA run on GPIO32 alone, then the V/I
+// pattern is restored. Returns -1 if no valid sample came back (e.g. the pattern switch failed).
+static float readRefRaw() {
+  if (adc_continuous_config(adcHandle, &cfgRef) != ESP_OK) return -1.0f;
+  adc_continuous_flush_pool(adcHandle);
+  float result = -1.0f;
+  if (adc_continuous_start(adcHandle) == ESP_OK) {
+    int64_t sum = 0;
+    int n = 0, tries = 0;
+    while (n < REF_SAMPLES && tries < 20) {
+      uint32_t got = 0, cnt = 0;
+      if (adc_continuous_read(adcHandle, rawBuf, FRAME_BYTES, &got, 200) != ESP_OK) { tries++; continue; }
+      if (adc_continuous_parse_data(adcHandle, rawBuf, got, parsed, &cnt) != ESP_OK) { tries++; continue; }
+      for (uint32_t e = 0; e < cnt && n < REF_SAMPLES; e++)
+        if (parsed[e].valid && parsed[e].channel == ADC_REF_CH) { sum += parsed[e].raw_data; n++; }
+    }
+    adc_continuous_stop(adcHandle);
+    if (n) result = (float)sum / n;
+  }
+  ESP_ERROR_CHECK(adc_continuous_config(adcHandle, &cfgVI));
+  return result;
 }
 
 // setup(): the real conversion period, from ISR timestamps over MAX_FRAMES frames (~1.3 s).
@@ -239,7 +283,7 @@ static void printMeta() {
     "A_nominal_v=%.4f Rr_ohm_placeholder=%.4f vref=%.2f dac_bits=8 adc_bits=12 baud=%lu "
     "drive_core=%d capture_core=%d frontend_case=1 dac_inverted=1 adc_read=dma_cali%d "
     "adc_sample_hz=%lu adc_us_per_conv=%.4f decim=%d points_per_cycle=%d burst_cycles=%d "
-    "vi_align=trapezoid lut_mid_step=1 index_wrap=10000 t_us_wrap=100000\n",
+    "vi_align=trapezoid lut_mid_step=1 ref_gpio=32 index_wrap=10000 t_us_wrap=100000\n",
     driveFreqHz(), LUT_SIZE, DAC_CENTER, DAC_AMPLITUDE_COUNTS,
     A_NOMINAL_VOLTS, RR_OHMS_PLACEHOLDER, VREF, BAUD,
     (int)DRIVE_CORE, (int)xPortGetCoreID(), caliOk ? 1 : 0,
@@ -316,6 +360,7 @@ void loop() {
   double tConv0 = 0;
   int resyncs = 0, timeouts = 0;
   int n = capturePoints(need, tConv0, resyncs, timeouts);
+  float refRaw = readRefRaw();                  // right after the burst, before the slow printing
 
   printMeta();                                  // meta BEFORE the data (readers start here)
   const int M = decim;
@@ -345,9 +390,11 @@ void loop() {
     lineIndex++;
     printed++;
   }
-  Serial.printf("# burst=%lu lines=%d cycles=%d points=%d decim=%d resyncs=%d timeouts=%d ovf=%d\n",
+  Serial.printf("# burst=%lu lines=%d cycles=%d points=%d decim=%d resyncs=%d timeouts=%d ovf=%d",
                 (unsigned long)burstNo++, printed, wraps > 0 ? wraps - 1 : 0, n, M,
                 resyncs, timeouts, poolOverflow ? 1 : 0);
+  if (refRaw >= 0) Serial.printf(" ref_counts=%.2f", countsF(refRaw));
+  Serial.print("\n");
   uint32_t t = millis();
   while (millis() - t < BURST_GAP_MS) { pollCommands(); delay(5); }
 }

@@ -205,7 +205,8 @@ def main(argv=None):
 
     with open(LAST, "w") as fh:
         fh.write("\n".join(lines) + "\n")
-    result = f"{f_hz:.4g} Hz, Rr {rr_now:g} ohm: |Z| {abs(z):.4g} ohm, {describe(z, f_hz)}, |Z|/Rr {abs(z) / rr_now:.2f}"
+    kind = "nonlinear (diode/LED/Zener)" if nonlinear else describe(z, f_hz)   # an R/C/L value means nothing for a diode
+    result = f"{f_hz:.4g} Hz, Rr {rr_now:g} ohm: |Z| {abs(z):.4g} ohm, {kind}, |Z|/Rr {abs(z) / rr_now:.2f}"
     print(f"[4] {result}")
     verdict = ""
     if not args.no_verify:

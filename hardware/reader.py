@@ -22,10 +22,11 @@ Usage (from repo root):
         Override with --fe stage1|case1.
 """
 import argparse
+import inspect
 import os
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -39,9 +40,13 @@ ADC_VREF_DEFAULT = 3.3
 # ----------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class ChannelCal:
-    """Per-channel linear correction: volts = (counts - offset_counts) * volts_per_count."""
+    """Per-channel linear correction: volts = (counts - offset_counts) * volts_per_count.
+    ref_counts: the reference-divider reading taken with the zero capture (case1_frontend_mf
+    reads GPIO32 after every burst); frontend_to_raw shifts the offset by how far the
+    reference has moved since. None = no reference (older firmware): offsets used as they are."""
     offset_counts: float
     volts_per_count: float
+    ref_counts: float = None
 
     def to_volts(self, counts):
         return (np.asarray(counts, float) - self.offset_counts) * self.volts_per_count
@@ -81,6 +86,7 @@ class Capture:
     adc_i: np.ndarray = None
     n_bad_lines: int = 0                          # malformed data lines that were skipped
     n_dup_lines: int = 0                          # repeated/stale rows dropped (see parse_capture)
+    ref_counts: float = None                      # mean `ref_counts=` of the `# burst=` lines (reference divider)
 
 
 def _parse_meta(line, meta):
@@ -122,7 +128,9 @@ def parse_capture(lines, max_cycles=None):
     cap = Capture()
     rows, wraps, last_phase = [], 0, None
     last_idx, stale_run = None, 0
-    for line in lines:
+    refs, stopped_early = [], False
+    it = iter(lines)
+    for line in it:
         if isinstance(line, bytes):
             line = line.decode("ascii", errors="replace")
         line = line.strip()
@@ -133,6 +141,11 @@ def parse_capture(lines, max_cycles=None):
             _parse_meta(line, cap.meta)
             if "drive_freq_hz=" in line:
                 last_idx = None
+            if line.startswith("# burst=") and "ref_counts=" in line:
+                try:
+                    refs.append(float(line.split("ref_counts=")[1].split()[0]))
+                except (IndexError, ValueError):
+                    pass
             continue
         row = _parse_row(line)
         if row is None:
@@ -151,6 +164,7 @@ def parse_capture(lines, max_cycles=None):
         if last_phase is not None and last_phase - row[2] > np.pi:
             wraps += 1
             if max_cycles is not None and wraps > max_cycles:   # first wrap only *starts* cycle 1
+                stopped_early = True
                 break
         last_phase = row[2]
     if rows:
@@ -159,6 +173,18 @@ def parse_capture(lines, max_cycles=None):
         cap.adc_v, cap.adc_i = a[:, 3], a[:, 4]
     else:
         cap.index = cap.t_us = cap.phase = cap.adc_v = cap.adc_i = np.empty(0)
+    if stopped_early and not inspect.isgenerator(lines):
+        # a saved file / list: the burst's reference reading comes after its last row — find it
+        # (not for a live serial stream, which would block until its deadline)
+        for line in it:
+            line = line.decode("ascii", errors="replace") if isinstance(line, bytes) else line
+            if line.startswith("# burst=") and "ref_counts=" in line:
+                try:
+                    refs.append(float(line.split("ref_counts=")[1].split()[0]))
+                except (IndexError, ValueError):
+                    pass
+                break
+    cap.ref_counts = float(np.mean(refs)) if refs else None
     return cap
 
 
@@ -315,6 +341,9 @@ def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None, align
     Rr = cap.meta.get("Rr_ohm_placeholder") if Rr is None else Rr
     if Rr is None:
         raise ValueError("Rr is unknown: pass Rr= (the sense resistor actually connected).")
+    cal_a, cal_b, drift = ref_corrected(cap, cal_a, cal_b)
+    if info is not None:
+        info["ref_drift_counts"] = drift
     sl = _whole_cycle_slice(cap.phase)
     vref = cap.meta.get("vref", ADC_VREF_DEFAULT)
     absolute = ChannelCal(0.0, vref / ADC_MAX)          # pin volts, not centred
@@ -332,6 +361,22 @@ def frontend_to_raw(cap, Rr=None, A=None, cal_a=None, cal_b=None, fe=None, align
     if shift:
         phase = np.mod(phase + shift, 2 * np.pi)
     return {"v": v, "i": i, "phase": phase, "A": float(A), "Rr": float(Rr)}
+
+
+def ref_corrected(cap, cal_a, cal_b):
+    """
+    (cal_a, cal_b, drift) with the offset drift since the zero capture added to both channels.
+    The node offsets wander by up to ~0.25 V within minutes, the same way on both channels
+    (2026-11-27; likely the ESP32 3V3 that feeds every divider — the ADC reads against its own
+    reference, so it isn't ratiometric). case1_frontend_mf reads a third, identical divider
+    whose input sits at GND (GPIO32) after every burst; its move since the zero capture is the
+    channels' move. No-op (drift None) unless both the capture and the zero cal carry a reading.
+    """
+    if cap.ref_counts is None or cal_a is None or cal_b is None or cal_a.ref_counts is None:
+        return cal_a, cal_b, None
+    d = cap.ref_counts - cal_a.ref_counts
+    return (replace(cal_a, offset_counts=cal_a.offset_counts + d),
+            replace(cal_b, offset_counts=cal_b.offset_counts + d), float(d))
 
 
 def zero_cal(cap, fe=None, max_b_ratio=0.02):
@@ -353,7 +398,10 @@ def zero_cal(cap, fe=None, max_b_ratio=0.02):
         raise ValueError(f"zero capture: node B follows the drive ({amp[1]:.0f} vs {amp[0]:.0f} counts) "
                          "— take it with no DUT plugged in")
     vref = cap.meta.get("vref", ADC_VREF_DEFAULT)
-    return ChannelCal.zeroed(a, fe.offset_of("a"), vref), ChannelCal.zeroed(b, fe.offset_of("b"), vref)
+    ca, cb = ChannelCal.zeroed(a, fe.offset_of("a"), vref), ChannelCal.zeroed(b, fe.offset_of("b"), vref)
+    if cap.ref_counts is not None:                 # remember where the reference sat at zero time
+        ca, cb = replace(ca, ref_counts=cap.ref_counts), replace(cb, ref_counts=cap.ref_counts)
+    return ca, cb
 
 
 # ----------------------------------------------------------------------------------------
@@ -450,6 +498,9 @@ def main(argv=None):
         raw = frontend_to_raw(cap, info=info, **kw) if args.frontend else capture_to_raw(cap, **kw)
         if info:
             print(f"drive phase: labels shifted {info['phase_shift_deg']:+.1f} deg to match node A")
+        if info.get("ref_drift_counts") is not None:
+            print(f"offset drift since the zero capture (reference divider): {info['ref_drift_counts']:+.1f} counts, "
+                  "subtracted from both channels")
 
     print(f"samples: {len(raw['v'])}   A={raw['A']:.4f} V   Rr={raw['Rr']:g} ohm")
     print(f"v range: {raw['v'].min():+.3f} .. {raw['v'].max():+.3f} V   "

@@ -124,6 +124,15 @@ fields, but `index` is printed modulo 10000 and `t_us` modulo 100000 µs (meta k
 never saturates. Nothing downstream uses either field except to spot dropped samples, which
 still works on the wrapped difference. `phase_rad` is unaffected (always 0..2π).
 
+**Burst firmware** (`case1_frontend_1k`, `case1_frontend_mf`, 2026-11-27): rows come in bursts.
+Each burst starts with the meta line (`# drive_freq_hz=...`, plus `decim`, `points_per_cycle`,
+`burst_cycles`, `vi_align`) and ends with `# burst=<n> lines= cycles= points= decim= resyncs=
+timeouts= ovf=`. Since 2026-11-27 `case1_frontend_mf` adds `ref_counts=<x>` to that line: the mean
+of ~2000 conversions of the offset-reference divider (GPIO32, a copy of the return-path dividers
+with its input at GND), read right after the burst, on the same calibrated counts scale. `reader.py`
+keeps it as `Capture.ref_counts`, stores it with the zero cal, and adds its move since the zero
+capture to both channels' offsets (`reader.ref_corrected`).
+
 PC side (`hardware/reader.py`, implemented) skips `#` lines, the header, and malformed rows
 (e.g. a half-received first line), keeps only whole drive cycles (first phase wrap → last
 phase wrap), converts counts → volts through a per-channel `ChannelCal(offset, gain)`, computes

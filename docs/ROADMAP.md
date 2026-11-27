@@ -97,6 +97,14 @@ Ordered roughly by priority. Check items off as they land.
       the C5/C6 swap.
       Then 1 nF (Rr 100k, needs a jumper move) and a big electrolytic (needs low amplitude —
       not supported yet).
+- [x] **Offset drift → automatic zero (found and built 2026-11-27):** node offsets moved by up to
+      ~0.25 V within minutes, the same way on both channels (likely the ESP32 3V3 feeding the
+      dividers; the ADC isn't ratiometric). A third divider with its input at GND now sits on
+      GPIO32; `case1_frontend_mf` reads it after every burst (`ref_counts=` on the `# burst=`
+      line) and `reader.py` subtracts its move since the zero capture from both channels. Over a
+      2-minute check the corrected baseline stayed within ~25 mV where the uncorrected one moved
+      26–62 mV. Still to see: a long run (tens of minutes, a power cycle). The zero must be taken
+      with this firmware (`docs/CASE1_WIRING.md` ADC step 3).
 - [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
@@ -123,11 +131,11 @@ Ordered roughly by priority. Check items off as they land.
       accuracy-floor test retrains the models). Reasoning: `docs/BOM.md` §5.
 - [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
       good and (deliberately created) faulty. *Started 2026-11-27:* `hardware/captures/`
-      (labels.csv) has R, C, diode good; open, short, reversed diode; and soft faults built
-      from good parts (leaky C, high-ESR C, degraded diode). Still missing L, LED, Zener, and
-      milder soft faults.
+      (labels.csv) has R, C, diode, LED good; open, short, reversed diode, reversed LED; and soft
+      faults built from good parts (leaky C, high-ESR C, degraded diode). Still missing L,
+      Zener, and milder soft faults.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
-      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 15/15 verdicts correct (too
+      *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 18/18 verdicts correct (too
       few to compare with the ~98 % synthetic number; soft faults are strong versions only).
 - [ ] Fine-tune / retrain on a mix of synthetic + real; keep the synthetic pipeline as
       a bootstrap.

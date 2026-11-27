@@ -237,6 +237,35 @@ def test_zero_cal_removes_adc_offset_from_current():
     assert abs(np.mean(bad["i"])) > 1e-3
 
 
+def test_reference_counts_parsed_from_burst_lines():
+    lines = case1_lines() + ["# burst=0 lines=600 cycles=3 ref_counts=1872.50 ovf=0",
+                             "# burst=1 lines=600 cycles=3 ref_counts=1874.50 ovf=0"]
+    assert _cap(lines).ref_counts == pytest.approx(1873.5)
+    assert _cap(case1_lines()).ref_counts is None          # older firmware: no reference
+    # the reference comes after the burst's last row: still found when parsing stops early
+    assert reader.parse_capture(lines, max_cycles=1).ref_counts == pytest.approx(1872.5)
+
+
+def test_reference_divider_drift_is_subtracted():
+    # 2026-11-27: offsets moved up to ~0.25 V at the node within minutes, both channels alike.
+    # The reference divider (GPIO32) moves with them; its shift since the zero is subtracted.
+    off, drift, rr, r_dut = 60, 25, 1000.0, 1000.0
+    zero = _cap(case1_lines(r_dut=np.inf, rr=rr, adc_offset=off) + [f"# burst=0 ref_counts={1873.0:.2f}"])
+    cal_a, cal_b = reader.zero_cal(zero)
+    assert cal_a.ref_counts == cal_b.ref_counts == pytest.approx(1873.0)
+    later = case1_lines(r_dut, rr, adc_offset=off + drift)
+    info = {}
+    raw = reader.frontend_to_raw(_cap(later + [f"# burst=1 ref_counts={1873.0 + drift:.2f}"]),
+                                 Rr=rr, cal_a=cal_a, cal_b=cal_b, info=info)
+    assert info["ref_drift_counts"] == pytest.approx(drift)
+    i_exact = 5.0 * np.sin(raw["phase"]) / (r_dut + rr)
+    lsb_i = 3.3 / reader.ADC_MAX / reader.FrontEnd.case1().gain / rr
+    assert np.max(np.abs(raw["i"] - i_exact)) < 2 * lsb_i
+    # without the reference reading the same capture carries the drift as a current offset
+    stale = reader.frontend_to_raw(_cap(later), Rr=rr, cal_a=cal_a, cal_b=cal_b)
+    assert abs(np.mean(stale["i"]) - np.mean(i_exact)) > 10 * lsb_i
+
+
 def test_zero_cal_refuses_a_capture_with_a_dut_in():
     with pytest.raises(ValueError, match="no DUT"):
         reader.zero_cal(_cap(case1_lines(r_dut=1000.0, rr=1000.0)))
