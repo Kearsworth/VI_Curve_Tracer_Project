@@ -67,6 +67,20 @@ One quad op-amp does all four jobs, powered from ±15 V:
 - channel B holds the 1.65 V reference;
 - channels C and D copy node A and node B to the ADC without loading them.
 
+### DD1718PA: ±15 V from the USB 5 V
+
+<img src="docs/images/dd1718pa_back.jpg" width="230" align="right" alt="DD1718PA module, back side: -Vo, GND, +Vo, GND, VIN">
+
+- **VIN** comes from the ESP32's 5 V (VIN pin) through a 1N5819 Schottky, which blocks
+  reverse current. It reads 4.28 V after the diode.
+- **+Vo / −Vo** feed op-amp pins 4 and 11. The module is set for ±15 V: it measured
+  +15.37 V / −15.98 V unloaded and −15.48 V with the op-amp in. The OPA4134 is rated to ±18 V.
+- It switches at ~400 kHz. Each rail therefore gets 0.1 µF right at the op-amp pins, and the
+  ADC inputs have a small RC filter (C5/C6).
+- All grounds (module, op-amp, ESP32) meet at one point.
+
+<br clear="right">
+
 ### Schematic
 
 ![Case 1 analog front end schematic](docs/images/case1_schematic.png)
