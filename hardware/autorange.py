@@ -8,6 +8,7 @@ rule synth trains on: synth.auto_range over synth.TEST_FREQS_HZ x synth.RR_OPTIO
 
   python3 hardware/autorange.py                  # Rr connected now: tools/board_settings.json
   python3 hardware/autorange.py --rr 1022 --rr-values 221.4,1022,10290,101300
+  python3 hardware/autorange.py --rr 1022 --zero hardware/captures/2026-11-27_mf1k_zero_ref_noDUT.txt
 
 Needs firmware case1_frontend_mf (selectable frequency). Steps:
   1. reset the board, take one 1 kHz burst with the Rr connected now
@@ -213,6 +214,8 @@ def main(argv=None):
     ap.add_argument("--rr-values", default=",".join(f"{v:g}" for v in DEFAULT_RR_VALUES),
                     help="actual values of the 220/1k/10k/100k positions, ohm")
     ap.add_argument("--no-verify", action="store_true")
+    ap.add_argument("--zero", default=ZERO, metavar="FILE",
+                    help="zero-cal capture taken with no DUT (default: tools/zero_capture.txt)")
     args = ap.parse_args(argv)
 
     settings = {}
@@ -222,7 +225,11 @@ def main(argv=None):
     rr_values = [float(x) for x in args.rr_values.split(",")]
     actual = dict(zip(synth.RR_OPTIONS, rr_values))
     rr_now = args.rr or float(settings.get("rr", 1022.0))
-    zero = reader.zero_cal(reader.load_capture(ZERO)) if os.path.exists(ZERO) else None
+    if args.zero != ZERO and not os.path.exists(args.zero):
+        sys.exit(f"zero-cal file not found: {args.zero}")
+    zero = reader.zero_cal(reader.load_capture(args.zero)) if os.path.exists(args.zero) else None
+    if zero is None:
+        print("no zero-cal capture: running without the offset correction (pass --zero FILE)")
     port = args.port
     if port == "auto":
         from serial.tools import list_ports

@@ -32,7 +32,8 @@ import features
 MODEL_DIR = os.path.join(os.path.dirname(__file__), 'models')
 
 
-def build_xy(n_good=300, n_faulty=300, seed=0):   # 300: wider value/fault variety since 2026-11-27
+def build_xy(n_good=1200, n_faulty=1200, seed=0):  # 1200 (was 300): more data lifted Zener leak and
+                                                   # leaky C without hurting good parts (compare_models.py, 2026-11-28)
     """สร้างข้อมูล -> calibrate -> features. คืน X, ป้ายชนิด, ป้ายสุขภาพ"""
     data = synth.make_dataset(n_good=n_good, n_faulty=n_faulty, seed=seed)
     X, comp, health = [], [], []

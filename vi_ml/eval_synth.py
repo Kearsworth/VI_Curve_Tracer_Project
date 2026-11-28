@@ -1,13 +1,13 @@
 """
 eval_synth.py — the synthetic numbers quoted in the docs, on a set the models never saw.
 
-  python3 vi_ml/eval_synth.py                 # ~20 s: train (as train.py) + score 7,200 samples
+  python3 vi_ml/eval_synth.py                 # ~1 min: train (as train.py) + score 7,200 samples
   python3 vi_ml/eval_synth.py --good 100 --faulty 200   # quicker, noisier
 
 Trains the three models exactly as train.py does (without saving them), then scores a fresh
 synth.make_dataset(seed=1) set: health accuracy and MCC, good parts called GOOD, type accuracy
 on good parts, anomaly ROC-AUC, the health confusion matrix, and recall per component/fault.
-train.py's own test split has only 10-40 samples per fault, too few for per-fault recall.
+train.py's own test split has only ~75-150 samples per fault, too few for steady per-fault recall.
 """
 import argparse
 import os

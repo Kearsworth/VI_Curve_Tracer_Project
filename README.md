@@ -99,11 +99,11 @@ reasoning are in [`docs/BOM.md`](docs/BOM.md).
 | **Real captures** (`hardware/captures/`) | 52/52 verdicts correct (33 good, 19 faulty). Good: 24 kit resistors 100 Ω – 300 kΩ plus 988 Ω and 2k‖2k (28 captures), 0.1 µF ceramic, 1N4148, LED. Faulty: open, short, reversed diode, reversed LED, leaky C, high-ESR C, degraded diode and LED, built at several severities |
 | **Measuring known parts** | 24 resistors of a 1 % kit, 100 Ω – 300 kΩ, auto-ranged: within ±1.5 % of a multimeter. 0.1 µF ceramic → 97–101 nF |
 | **Outside the range** | Good 10 Ω, 47 Ω, 470 kΩ and 1 MΩ resistors → OUT_OF_RANGE with the measured value. Open and short → FAULTY |
-| **Synthetic set the model never saw** (any value, measured board noise: `python3 vi_ml/eval_synth.py`) | health 97.3 % (good parts called GOOD 98.7 %), type 100 % on good parts, anomaly ROC-AUC 0.82 |
+| **Synthetic set the model never saw** (any value, measured board noise: `python3 vi_ml/eval_synth.py`) | health 98.4 % (good parts called GOOD 99.1 %), type 100 % on good parts, anomaly ROC-AUC 0.83 |
 
 Still open:
-- Soft faults are the weakest classes on synthetic data: Zener leak 81 %, shorted turns 83 %,
-  high-ESR C 84 %, leaky C 87 %. Hard faults (open, short) are 100 %.
+- Soft faults are the weakest classes on synthetic data: Zener leak 89 %, high-ESR C 90 %,
+  shorted turns 91 %, high-DCR L 95 %. Hard faults (open, short) are 100 %.
 - Not tried on real parts yet: inductors, Zeners and electrolytic capacitors. Electrolytics need
   a lower drive amplitude or a DC bias, which the board doesn't have yet.
 - The multi-frequency firmware reads values ~1 % off at 91–333 Hz. The cause isn't known yet.
@@ -119,7 +119,7 @@ pip install -r requirements.txt
 cd vi_ml && python3 demo.py        # train + save the models, try a few samples
 cd .. && pytest -q                 # invariant tests (188)
 python3 hardware/eval_real.py      # the model on the labelled real captures
-python3 vi_ml/eval_synth.py        # the synthetic numbers above (~20 s)
+python3 vi_ml/eval_synth.py        # the synthetic numbers above (~1 min)
 ```
 
 With the board:
@@ -132,9 +132,9 @@ With the board:
    the verdict.
 
 The zero-cal and the full bring-up are described in [`docs/CASE1_WIRING.md`](docs/CASE1_WIRING.md).
-`autorange.py` and `collect.py` read the zero-cal from `tools/zero_capture.txt`. `tools/` is
-the authors' local workspace and isn't in this repo; without that file they run without the
-offset correction.
+`autorange.py` and `collect.py` read the zero-cal (a capture with no DUT) from `--zero FILE`,
+or by default from `tools/zero_capture.txt` in the authors' local workspace, which isn't in this
+repo. Without one, `autorange.py` runs without the offset correction and `collect.py` stops.
 
 ## Repository layout
 

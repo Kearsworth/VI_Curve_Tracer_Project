@@ -8,10 +8,10 @@
 > **Update 2026-11-28 — our own numbers below are from September 2026.** Since then there are
 > 14 features (the 12 plus `off_slope` and `on_res`, 2026-11-27), the synthetic data covers
 > every value with the board's measured imperfections, and the Zener Vz-shift fault became Zener
-> leak. On 7,200 unseen synthetic samples (`python3 vi_ml/eval_synth.py`): health 97.3 %,
-> MCC 0.94, type 100 % on good parts, anomaly ROC-AUC 0.82; the weakest soft faults are Zener
-> leak 81 %, shorted turns 83 %, high-ESR C 84 % and leaky C 87 %. The MCC / confusion-matrix
-> follow-up from §3 is a `docs/ROADMAP.md` Phase C item.
+> leak. Trained on 14,400 samples and scored on 7,200 unseen ones (`python3 vi_ml/eval_synth.py`):
+> health 98.4 %, MCC 0.97, type 100 % on good parts, anomaly ROC-AUC 0.83; the weakest soft
+> faults are Zener leak 89 %, high-ESR C 90 % and shorted turns 91 %. The MCC /
+> confusion-matrix follow-up from §3 is a `docs/ROADMAP.md` Phase C item.
 
 ## 1. Status of the "Selim et al., 2025" citation
 
@@ -98,8 +98,9 @@ benchmark doesn't score on — but it does mean:
   run ANN and SVM on the *existing* 12 features and compare per-fault recall against RF,
   specifically on the three known-weak soft faults. If the literature's pattern holds here
   too, that's a lower-cost win than engineering new features.
-  *Run 2026-11-28 (`vi_ml/compare_models.py`, 14 features, each model tuned by 5-fold CV,
-  scored on 7,200 unseen synthetic samples): the pattern does **not** hold here.* RF 97.3 %
+  *Run 2026-11-28 (`vi_ml/compare_models.py`, 14 features, 300 training samples per class,
+  each model tuned by 5-fold CV, scored on 7,200 unseen synthetic samples): the pattern does
+  **not** hold here.* RF 97.3 %
   (MCC 0.94), gradient boosting 97.3 %, SVM (RBF) 95.8 %, MLP 95.6 %. SVM and MLP are weakest
   on a soft fault (Zener leak 68 % / 44 % against RF's 81 %), and each gets one of the 52 real
   captures wrong where RF gets none. A likely reason, not tested: our soft faults hinge on a
