@@ -75,9 +75,11 @@ HW = dict(
     node_lsb_v=0.0091,           # 1 count ADC ที่ node A/B (0.806 mV / gain divider 0.0882)
     noise_counts=(3.0, 14.0),    # σ noise ต่อ node ต่อจุด (วัดได้ 9.4 / 11 count ตอน C5/C6 = 100 pF)
     offset_frac=0.006,           # σ offset DC ค้างหลัง zero-cal ต่อ node (สัดส่วนของ A)
-    crosstalk=(0.0, 0.03),       # node B รับสัญญาณ node A มาเป็นสัดส่วนนี้ (วัดได้ ~4% ตอน 100 pF)
+    crosstalk=(0.0, 0.005),      # node B รับสัญญาณ node A มาเป็นสัดส่วนนี้: firmware DMA วัดได้ 0.07–0.2 %
+                                 # (polling รุ่นเก่า ~4 %; ค่าเดิม 0–3 % กลบ soft fault ของ C — 2026-11-28)
     crosstalk_phase_deg=(0.0, 15.0),
-    skew_deg=1.5,                # σ ความเหลื่อมเวลาของช่อง B เทียบ A (วัดได้ −2.5° ที่ 50 Hz)
+    skew_deg=0.75,               # σ ความเหลื่อมเวลาของช่อง B เทียบ A: firmware DMA < 1 µs ตอนช็อต, มุมเพี้ยนบน R
+                                 # 0.3–0.6° ที่ 1 kHz (สูงสุด 1.1° ที่ 333 Hz); polling 50 Hz รุ่นเก่า ~2.5°
     phase_offset_deg=5.0,        # เฟสที่ติดป้ายเหลื่อมจากคลื่นจริง ±ค่านี้ (DAC/RC delay)
     amp_err=0.02,                # σ ความคลาดของ A ที่วัดได้
     samples_per_cycle=(40, 60),

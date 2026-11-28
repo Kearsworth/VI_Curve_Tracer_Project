@@ -96,7 +96,9 @@ Ordered roughly by priority. Check items off as they land.
       firmware read +0.08 %) — cause not found yet. A short-circuit sweep shows the channels
       match when they see the same signal (gain −0.13…−0.25 %, timing < 1 µs), so the error only
       appears when the two channels see different voltages; parked — re-check the R sweep after
-      the C5/C6 swap.
+      the C5/C6 swap. A simulation of the firmware's whole timing chain (`hardware/sim/sim_r_error.py`,
+      2026-11-28) gives ~0 at every frequency, so the cause is analog or in the ADC itself, not in
+      the timing or averaging. Next-session checklist: `docs/NEXT_BOARD_SESSION.md`.
       Then 1 nF (Rr 100k, needs a jumper move) and a big electrolytic (needs low amplitude —
       not supported yet).
 - [x] **Offset drift → automatic zero (found and built 2026-11-27):** node offsets moved by up to
@@ -183,9 +185,18 @@ Ordered roughly by priority. Check items off as they land.
       high-ESR C 84 → 85 %, leaky C 87 → 90 %; real captures still 52/52; `train.py`'s own test
       split 97.4 → 98.4 %. Costs: `train.py` ~40 s, `eval_synth.py` ~1 min, `pytest` ~1.5 min
       (was ~25 s; `tests/test_pipeline.py` retrains twice).
+- [x] **synth's board model matched to the DMA firmware** (2026-11-28): crosstalk 0–3 % → 0–0.5 %
+      (measured 0.07–0.2 %), V/I skew σ 1.5° → 0.75° (measured < 1 µs on a short, 0.3–0.6° on a
+      resistor at 1 kHz, 1.1° worst at 333 Hz). The old values came from the polling firmware and
+      blurred the ~3.4° that separates a good C (DF ≤ 6 %) from a high-ESR one (≥ 12 %).
+      `vi_ml/eval_synth.py`: health 97.8 → 98.4 %, MCC 0.951 → 0.965, good parts GOOD 98.8 → 99.1 %,
+      high-ESR C 85 → 90 %, leaky C 90 → 97 %, shorted turns 87 → 91 %, Zener leak 86 → 89 %; real
+      captures still 52/52. Trained on the cleaner board, the model calls more good parts FAULTY if
+      the board gets worse (on data made with the old settings: good parts GOOD 96.5 %), so redo
+      this check after hardware changes.
 - [x] Report MCC, a confusion matrix and the RF's train-vs-test gap, as the soft-fault
       literature does (docs/LITERATURE.md §3, §7). *Done 2026-11-28:* `vi_ml/eval_synth.py`
-      prints MCC (0.95), the health confusion matrix and recall per fault on 7,200 unseen
+      prints MCC (0.97), the health confusion matrix and recall per fault on 7,200 unseen
       synthetic samples; `vi_ml/compare_models.py` prints train / CV / unseen accuracy (RF at
       300 per class: 99.5 / 97.3 / 97.3 %, a 2-point train gap as the literature warns, but no
       loss on unseen data).

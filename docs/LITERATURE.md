@@ -9,8 +9,8 @@
 > 14 features (the 12 plus `off_slope` and `on_res`, 2026-11-27), the synthetic data covers
 > every value with the board's measured imperfections, and the Zener Vz-shift fault became Zener
 > leak. Trained on 14,400 samples and scored on 7,200 unseen ones (`python3 vi_ml/eval_synth.py`):
-> health 97.8 %, MCC 0.95, type 100 % on good parts, anomaly ROC-AUC 0.82; the weakest soft
-> faults are high-ESR C 85 %, Zener leak 86 %, shorted turns 87 % and leaky C 90 %. The MCC /
+> health 98.4 %, MCC 0.97, type 100 % on good parts, anomaly ROC-AUC 0.83; the weakest soft
+> faults are Zener leak 89 %, high-ESR C 90 % and shorted turns 91 %. The MCC /
 > confusion-matrix follow-up from §3 is a `docs/ROADMAP.md` Phase C item.
 
 ## 1. Status of the "Selim et al., 2025" citation

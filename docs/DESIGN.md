@@ -83,7 +83,7 @@ axes independently.
   MLP 95.6 %. More data helped more than another model, so `train.py` now uses 1,200 per class.
 - **Isolation Forest (anomaly)**: trained on **good parts only**, flags anything unusual.
   Matches the real world where faulty examples are rare. Lower AUC than the supervised
-  model (0.82 on the full-value-range synth, `vi_ml/eval_synth.py`; it was 0.87 on the old
+  model (0.83 on the full-value-range synth, `vi_ml/eval_synth.py`; it was 0.87 on the old
   one-value synth), but needs no faulty data.
 - **PyTorch / deep learning (future only)**: 1D-CNN / Siamese / autoencoder are on the
   roadmap for when there's enough *real* data. Not in the current runtime path.

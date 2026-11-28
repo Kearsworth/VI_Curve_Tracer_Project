@@ -31,8 +31,8 @@ form; Phase B (real data) is under way.**
   verdict, FAULTY for open/short, or OUT_OF_RANGE when |Z|/Rr is outside 0.25–4.
 - **ML: trained on synthetic data only** (14,400 samples since 2026-11-28): any value of
   R/C/L/D/LED/Zener, simulated auto-range, measured board imperfections, 14 features. On 7,200
-  unseen synthetic samples (`python3 vi_ml/eval_synth.py`): health 97.8 % (good called GOOD
-  98.8 %), type 100 % on good parts, anomaly ROC-AUC 0.82.
+  unseen synthetic samples (`python3 vi_ml/eval_synth.py`): health 98.4 % (good called GOOD
+  99.1 %), type 100 % on good parts, anomaly ROC-AUC 0.83.
 - **Real data: `python3 hardware/eval_real.py` → 52/52** (24 kit resistors 100 Ω–300 kΩ, C,
   diode, LED; open, short, reversed, graded soft faults). Lock-in values are within ±1.5 % of a
   multimeter.
@@ -153,9 +153,10 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 
 - The model is trained on **synthetic data only**. The real check is 52 labelled captures (all
   right): too few to compare with the synthetic numbers, and soft faults only at a few strengths.
-- **Soft faults are the weak spot** (synthetic, `vi_ml/eval_synth.py`): high-ESR C 85 %, Zener
-  leak 86 %, shorted turns 87 %, leaky C 90 %, high-DCR L 94 %, reversed/degraded diode ~97–98 %;
-  hard faults 100 %. "Good" C allows DF up to 6% (class-II ceramics measured ~4–5%);
+- **Soft faults are the weak spot** (synthetic, `vi_ml/eval_synth.py`): Zener leak 89 %, high-ESR C
+  90 %, shorted turns 91 %, high-DCR L 95 %, leaky C 97 %, degraded diode 97 %; hard faults 100 %.
+  synth's board model matches the DMA firmware (crosstalk ≤ 0.5 %, V/I skew σ 0.75°): the old
+  50 Hz polling sketch (~2.4° skew) is outside it. "Good" C allows DF up to 6% (class-II ceramics measured ~4–5%);
   healthy aluminium electrolytics can reach DF 10–20%, which this synth would call high-ESR —
   ESR limits really depend on the capacitor type (needs the reference/type path).
 - **Measuring range:** the model judges |Z|/Rr from 0.25 to 4 with Rr 221 Ω … 101 kΩ, so
