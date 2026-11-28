@@ -158,17 +158,35 @@ Ordered roughly by priority. Check items off as they land.
       a bootstrap.
 
 ## Phase C — Model quality (soft faults)
-- [ ] Quick experiment first: benchmark ANN and SVM against the current RF on the
-      *existing* 14 features, focused on the weakest soft faults (2026-11-28,
-      `vi_ml/eval_synth.py`: Zener leak 81 %, shorted turns 83 %, high-ESR C 84 %, leaky C 87 %).
-      Motivated by docs/LITERATURE.md §3 — a closely related published study found ANN/SVM
-      beating RF specifically on soft faults. Cheaper to try than new features; do this before
-      or alongside the item below.
-- [ ] Report MCC, a confusion matrix and the RF's train-vs-test gap, as the soft-fault
-      literature does (docs/LITERATURE.md §3, §7). *Partly done 2026-11-28:*
-      `vi_ml/eval_synth.py` prints MCC (0.94), the health confusion matrix and recall per fault
-      on 7,200 unseen synthetic samples. The train/test gap isn't printed by any script yet (a
-      one-off check on `train.py`'s split: 99.5 % train vs 97.4 % test).
+- [x] Quick experiment first: benchmark ANN and SVM against the current RF on the
+      *existing* 14 features, focused on the weakest soft faults. Motivated by
+      docs/LITERATURE.md §3 — a closely related published study found ANN/SVM beating RF
+      specifically on soft faults. **Done 2026-11-28** (`python3 vi_ml/compare_models.py`: each
+      model tuned by 5-fold CV on train.py's split, scored on 7,200 unseen synthetic samples and
+      the real captures):
+
+      | model | unseen acc | good → GOOD | Zener leak | shorted turns | high-ESR C | leaky C | real |
+      |---|---|---|---|---|---|---|---|
+      | RF (train.py; CV picks the same settings) | 97.3 % | 98.7 % | 81 % | 83 % | 84 % | 87 % | 52/52 |
+      | gradient boosting | 97.3 % | 97.9 % | 83 % | 86 % | 86 % | 88 % | 52/52 |
+      | SVM (RBF) | 95.8 % | 98.1 % | 68 % | 76 % | 81 % | 81 % | 51/52 |
+      | MLP (128, 64) | 95.6 % | 98.0 % | 44 % | 80 % | 82 % | 84 % | 51/52 |
+
+      The published ranking doesn't carry over to these features, so RF stays. Gradient boosting
+      ties overall but calls more good parts FAULTY and gives near-0/1 probabilities on the real
+      boundary parts. More data helps more than another model: RF trained on 14,400 samples →
+      97.9 %, Zener leak 89 %, leaky C 93 %, good parts and real captures unchanged; shorted turns
+      (~83 %) and high-ESR C (~87 %) don't move, so they need features (below).
+- [ ] Train on more synthetic data, e.g. `train.py` 300 → 1200 samples per component and
+      health (owner's call). From the benchmark above: +0.3–0.6 points overall, Zener leak
+      +7–8 points, leaky C +2–6 points, real captures still 52/52. Costs: training ~4× longer,
+      and `pytest` slower (`tests/test_pipeline.py` retrains twice).
+- [x] Report MCC, a confusion matrix and the RF's train-vs-test gap, as the soft-fault
+      literature does (docs/LITERATURE.md §3, §7). *Done 2026-11-28:* `vi_ml/eval_synth.py`
+      prints MCC (0.94), the health confusion matrix and recall per fault on 7,200 unseen
+      synthetic samples; `vi_ml/compare_models.py` prints train / CV / unseen accuracy (RF
+      99.5 / 97.3 / 97.3 %: a 2-point train gap, as the literature warns, but no loss on unseen
+      data).
 - [ ] Add features targeting soft faults: reverse-leakage slope, ESR tilt / loss tangent,
       diode knee sharpness. *Partly done 2026-11-27:* `off_slope` (reverse leakage) and
       `on_res` (forward series R) in `features.py`; ESR tilt and knee sharpness still open.
