@@ -76,6 +76,7 @@ vi_ml/            The ML pipeline (Python; run from inside this folder or by pat
   verify.py       load models → verify(raw) → {type, verdict, confidence, anomaly}
   demo.py         end-to-end: train then verify a few fresh samples
   eval_synth.py   the synthetic numbers the docs quote, on a set the models never saw
+  compare_models.py  health classifier benchmark: RF vs SVM vs MLP vs gradient boosting
   plot_signatures.py  renders the 6-component good-vs-faulty figure
   models/         trained models land here (git-ignored)
 tests/            pytest tests that encode the invariants (run these after changes!)
@@ -136,7 +137,8 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
    (1D-CNN/Siamese) — it is NOT used yet; don't add it to the runtime path.
    **Caveat (2026-09-14):** the literature citation backing "RF beats SVM/KNN" couldn't be
    verified, and the closest real study found the opposite on soft faults — see
-   `docs/LITERATURE.md` before treating this as settled or swapping the model.
+   `docs/LITERATURE.md` before treating this as settled or swapping the model. Our own
+   benchmark (2026-11-28, `vi_ml/compare_models.py`) has RF ahead of SVM and an MLP here.
 5. **Faults are shape-changing by design** (open/short/reversed/ESR/DCR/leak/...).
    Mild value drift is NOT treated as a fault here (a healthy wrong-value part looks
    "good" from shape alone; catching that needs a reference-comparison path — roadmap).

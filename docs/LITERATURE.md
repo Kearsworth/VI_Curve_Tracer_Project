@@ -98,6 +98,15 @@ benchmark doesn't score on — but it does mean:
   run ANN and SVM on the *existing* 12 features and compare per-fault recall against RF,
   specifically on the three known-weak soft faults. If the literature's pattern holds here
   too, that's a lower-cost win than engineering new features.
+  *Run 2026-11-28 (`vi_ml/compare_models.py`, 14 features, each model tuned by 5-fold CV,
+  scored on 7,200 unseen synthetic samples): the pattern does **not** hold here.* RF 97.3 %
+  (MCC 0.94), gradient boosting 97.3 %, SVM (RBF) 95.8 %, MLP 95.6 %. SVM and MLP are weakest
+  on a soft fault (Zener leak 68 % / 44 % against RF's 81 %), and each gets one of the 52 real
+  captures wrong where RF gets none. A likely reason, not tested: our soft faults hinge on a
+  threshold in one physical feature (`off_slope` for Zener leak, `on_res` for degraded parts),
+  which trees split on directly, while Dieste-Velasco's 6 frequency-domain magnitudes are
+  smooth inputs that suit kernels. RF's train/CV gap is 99.5 % / 97.3 %, as the paper warns,
+  but its unseen accuracy is still the best.
 
 **Evaluation depth.** This project currently reports headline accuracy numbers (97.8%
 health, ~100% type, 0.87 anomaly AUC) plus ad-hoc per-fault recall for the known weak
