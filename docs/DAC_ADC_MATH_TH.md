@@ -132,3 +132,19 @@ adc_code(measured) ≈ m × dac_code + b
 | สูตรอุดมคติ | `V = code/255 × 3.3V` | `code = V/3.3V × 4095` |
 | ของจริง (วัดจาก Stage 2) | มี offset + โค้งเล็กน้อยที่ปลายช่วง | รวม error ของทั้งคู่ไว้ในสมการเดียว `adc ≈ 16.0×dac - 231` |
 | ทำไมสำคัญ | ต้อง "หักลบ" offset/gain error นี้ออกก่อน ไม่งั้น V-I signature จะเพี้ยน |
+
+## 8. ของจริงบนบอร์ด Case 1 (อัปเดต 2026-11-28)
+
+ข้อ 6 เขียนไว้ตอนทำ loopback ว่า `calibrate.py` หรือ firmware จะต้องแก้ error นี้. ของจริงแบ่งงานกันตามตารางข้างล่าง
+และ `calibrate.py` **ไม่ได้**แก้ error ของ ADC เลย: มันแค่ resample เป็น 360 จุดแล้วหารด้วย A และ Rr.
+
+| ขั้น | ใครทำ | แก้อะไร |
+|---|---|---|
+| raw → mV | firmware (`case1_frontend_mf`) | ใช้ตาราง eFuse calibration ของชิปครบ 4096 ค่า แล้วส่งเป็น count บนสเกล `vref/4095` (แบบเส้นตรง 2 จุดอ่าน node A ต่ำไป ~7 %) |
+| ขา ADC → node | `reader.FrontEnd.case1()` | gain/offset ของ divider แต่ละช่องจากค่า R ที่วัดจริง (gain ≈ 0.088, offset ≈ 1.51 V) |
+| offset ที่เหลือ | `reader.zero_cal` | capture ตอนไม่มี DUT → offset ของแต่ละช่องที่ 0 V |
+| offset ที่เลื่อนตามเวลา | `reader.ref_corrected` | ช่องอ้างอิงบน GPIO32 (divider ที่ขาเข้าต่อ GND) ซึ่งอ่านหลังทุก burst |
+
+ฝั่ง DAC: วัดได้ 1 count ≈ 12.7 mV ที่ขา DAC (สูตรอุดมคติ 12.94 mV) × gain 5.92 ≈ **75 mV ที่ node A**. firmware ใช้
+63 counts → A ≈ 4.66 V แต่ไม่ต้องรู้ค่า A แม่นๆ เพราะ `reader.py` วัด A จาก node A เองทุก capture. และเพราะ V กับ I มาจาก
+การวัด node A กับ node B จริงทั้งคู่ ไม่ได้คำนวณจากค่าที่สั่ง DAC, ความไม่เป็นเชิงเส้นของ DAC จึงไม่ทำให้ค่า V/I เพี้ยน.

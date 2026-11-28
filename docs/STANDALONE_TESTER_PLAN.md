@@ -4,6 +4,9 @@
 > (NE5532 + MT3608/ICL7660S ±9 V rails). The physical build went the **Case 1** way instead:
 > Dr. Wathis's ±10 V drive stage with an OPA4134PA on DD1718PA ±15 V rails — see
 > `docs/BOM.md`. Keep this file as the ±5 V option; don't mix its BOM with Case 1's.
+> Two of its software stages were done for Case 1 instead (2026-11-27): Stage 2's burst DMA
+> capture with a frequency command (`case1_frontend_1k`, `case1_frontend_mf`), and Stage 3's
+> training over selectable Rr and frequency with auto-range (`synth.py`, `hardware/autorange.py`).
 
 Goal: a **real-use, standalone** V-I tester. One USB 5 V cable powers everything, the
 ESP32 drives the DUT itself, and the test settings (sense resistor Rr, drive frequency,
@@ -135,7 +138,8 @@ loading-corrected current, measured A; covered by `tests/test_reader.py`).
 
 ### Stage 3 — ML for selectable settings
 - Today's model is trained on one fixed (Rr, f) per component; a signature at any other
-  setting is out of distribution. Extend `synth.py` to sample Rr ∈ {220, 1k, 10k, 100k} and
+  setting is out of distribution. *(True on 2026-10-10; done for Case 1 on 2026-11-27, see the
+  status note at the top.)* Extend `synth.py` to sample Rr ∈ {220, 1k, 10k, 100k} and
   f ∈ {50, 200, 1000} and a range of component values; pass Rr and f into the features
   (or train per-setting models). Keep the golden rule: one `calibrate`/`features` path for
   training and inference.

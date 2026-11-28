@@ -31,18 +31,23 @@ reads the keyboard.
 
 By hand:
 
-1. Capture in the board pane (Enter). With the 1 kHz firmware the capture starts at the
-   board's settings line and is clean (`tools/board_page.py`).
+1. Capture in the board pane (Enter). With the burst firmware (`case1_frontend_1k` / `_mf`) the
+   capture starts at the board's settings line and is clean (`tools/board_page.py`; `tools/` is
+   the local workspace, not in the repo).
 2. `cp tools/last_capture.txt hardware/captures/<date>_<freq>_<part>.txt`
 3. Add a row to `labels.csv`. Use the Rr really connected and the zero-cal taken with the
    same firmware. Redo the zero-cal (no DUT) whenever the board or firmware changes.
 
-## What's here (2026-11-27)
+## What's here (2026-11-28)
 
-13 captures, all on the Case 1 board with C5/C6 = 100 pF and Rr 1k: zero-cal; good parts
-(988 Ω, 2k‖2k at 1 kHz and 50 Hz, 0.1 µF ceramic, 1N4148); hard faults (open socket, jumper
-short, 1N4148 reversed); and soft faults built from good parts — leaky C (0.1 µF ‖ 2 kΩ),
-high-ESR C (0.1 µF + 988 Ω in series), degraded diode (1N4148 + 988 Ω, and a milder
-1N4148 + 217 Ω at on_res 0.25, near the lower edge of synth's degraded range). All 12 scored
-verdicts are correct. Still small; the C faults are strong versions (ESR/X 0.63, Rleak/X 1.1),
-and there's no L, LED or real Zener yet.
+66 captures, all on the Case 1 board with C5/C6 = 100 pF, all at 1 kHz but one (50 Hz):
+
+| health | n | what |
+|---|---|---|
+| `zero` | 3 | zero-cal captures (no DUT): `case1_frontend_1k`, `case1_frontend_mf`, and `_mf` with the GPIO32 reference |
+| `good` | 33 | 24 kit resistors 100 Ω – 300 kΩ (multimeter values in `reference`); 988 Ω and 2k‖2k (4 captures, one at 50 Hz); 0.1 µF ceramic (2); 1N4148 (1); LED (2) |
+| `faulty` | 19 | open (1), short (2), reversed 1N4148 (1), reversed LED (1); soft faults built from good parts: leaky C (4), high-ESR C (4), degraded diode (4), degraded LED (2) |
+| `boundary` | 11 | not scored: soft faults between synth's good and faulty ranges (6); resistors outside the trained range, 10 Ω / 47 Ω / 470 kΩ / 1 MΩ (4); a 1 kΩ taken at Rr 10k (1) |
+
+All 52 scored verdicts are correct. The values and the soft-fault boundaries are tabled in
+`docs/CASE1_WIRING.md` ADC step 3. Still missing: inductors, Zeners and electrolytic capacitors.

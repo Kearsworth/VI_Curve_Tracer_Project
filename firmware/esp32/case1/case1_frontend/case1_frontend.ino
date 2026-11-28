@@ -7,12 +7,13 @@
 // (reader picks FrontEnd.case1() from the meta line's frontend_case=1).
 //
 // What changed vs. stage1_frontend:
-//   - Channel A is a difference amp: V_A = 6.1 * (V_REF - V_DAC), i.e. INVERTING. The LUT is
+//   - Channel A is a difference amp: V_A = G * (V_REF - V_DAC), i.e. INVERTING. The LUT is
 //     written as DAC_CENTER - amp*sin so node A = +A*sin(drive phase), the same sign convention
 //     synth.py trains on (CLAUDE.md design decision #2: phase = drive phase).
-//   - Gain 6.1 (61k/10k). DAC_AMPLITUDE_COUNTS = 63 -> A ~= 4.97 V: matches synth.py's A = 5 V
-//     and keeps LEDs under their ~5 V reverse rating. 126 -> ~9.95 V, only after the A = 10
-//     retrain (docs/ROADMAP.md Phase B). 1 DAC count = ~79 mV at node A.
+//   - G = 6.1 by design (61k/10k), 5.92 as built (FRONTEND_GAIN below). DAC_AMPLITUDE_COUNTS = 63
+//     -> A measured ~4.5-4.66 V: inside synth.py's A = 4-6 V and under an LED's ~5 V reverse
+//     rating. 126 -> ~9.5 V, only after an A = 10 retrain (docs/ROADMAP.md Phase B).
+//     1 DAC count = ~75 mV at node A.
 //   - DAC_CENTER trims node A's DC offset: if docs/CASE1_WIRING.md step 4 measured node A at
 //     +x V with the DAC at 128, RAISE DAC_CENTER by round(x / 0.079) (inverting stage).
 //   - Meta line adds frontend_case=1 and dac_inverted=1.
@@ -20,7 +21,7 @@
 // Wiring summary (full table in docs/CASE1_WIRING.md): GPIO25 -> e15 (R1 into pin 2),
 // GPIO34 -> f30 (P1, node A via follower C), GPIO35 -> f16 (P2, node B via follower D),
 // 3V3 -> j33, VIN -> a3 (1N5819 -> DD1718PA VIN), GND -> bottom GND rail. Connect GPIO34/35
-// LAST, only after f30/f16 measure ~1.49 V DC.
+// LAST, only after f30/f16 measure ~1.5 V DC.
 //
 // ADC read (changed 2026-11-26, ADC step 1):
 //   - analogReadMilliVolts(): applies the chip's factory eFuse calibration (offset + gain +

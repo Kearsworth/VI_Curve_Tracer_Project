@@ -54,7 +54,9 @@ voltage. So the hardware puts a small known **sense resistor (Rr)** in
 series with the DUT (device under test) and measures the voltage across
 *that* resistor. By Ohm's law, `I = V_sense / Rr`. So really there are two
 ADC channels: `CH_V` (voltage across the DUT) and `CH_I` (voltage across the
-sense resistor, converted to current).
+sense resistor, converted to current). On the Case 1 board the two channels
+read the two ends of the DUT, node A and node B, and the PC subtracts:
+`V_DUT = V_A − V_B`, `I = V_B / Rr` (§3c).
 
 Plot V (x-axis) against I (y-axis) as the sine sweeps through one full
 cycle, and you get the closed loop — the signature. That's *why* both a
@@ -85,8 +87,10 @@ voltage; the ESP32's built-in DAC (`dacWrite()`) **cannot** — it only outputs
 entirely within 0–3.3V (e.g. centered at 1.65V), and that offset is
 **subtracted back out in software** (using the known amplitude `A` carried
 in the raw dict) to reconstruct the effective ± signal before computing the
-V-I loop. See `firmware/esp32/README.md` → "Things to decide when
-implementing" for where this gets decided in Stage 3.
+V-I loop. See `firmware/esp32/README.md` (Stage 3) for how the loopback
+sketches did it. On the Case 1 board the bias comes out in hardware instead:
+op-amp channel A subtracts V_REF = 1.65 V and amplifies (×5.92), so node A
+swings ± around 0 V.
 
 ## 3c. ADC pins, measurement points, and the sense resistor
 *Asked: 2026-10-04*
@@ -103,6 +107,9 @@ Alternatively, analog difference amplifiers can provide separate conditioned
 DUT-voltage and sense-voltage outputs to the two ADC pins. Actual wiring
 depends on the advisor's circuit, including gain, offset, and ADC input limits;
 the conceptual circuit is not a direct ESP32 wiring instruction.
+*(As built, 2026-11-26/27: P is node A and Q is node B; each goes through a
+unity follower and a 100k/20k/20k divider, gain ≈ 0.088 around ≈ 1.51 V, into
+GPIO34 and GPIO35 — `docs/CASE1_WIRING.md`.)*
 
 The actual resistance in ohms is required for conversion to amperes and is
 stored as `raw['Rr']`. Tolerance and power rating also matter. Larger Rr
@@ -113,15 +120,17 @@ therefore change the captured signature. Current normalization
 even for a resistor DUT, normalized slope is `Rr/R_DUT`. Use known,
 validated capture settings for good references and test parts; validate or
 retrain across additional resistor ranges before relying on predictions.
+*(Done 2026-11-27: synth now trains every value with the Rr and frequency
+that auto-range would pick, so the model sees |Z|/Rr near 1, and the tester
+answers OUT_OF_RANGE when |Z|/Rr is outside 0.25–4 — `docs/DESIGN.md`.)*
 Current sensing and signal conditioning background:
 [Analog Devices CN0560](https://www.analog.com/en/resources/reference-designs/circuits-from-the-lab/CN0560.html).
 
-## 4. Why loopback (DAC → ADC directly, Stage 2 you're on now)
+## 4. Why loopback came first (DAC → ADC directly, 2026-09)
 
-Right now the real circuit (sense resistor, DUT socket, signal
-conditioning) is still being built by the advisor. So instead of waiting,
-the DAC output is wired straight into an ADC input with nothing in
-between. This proves the *data path* — can the ESP32 reliably generate a
+In September 2026 the real circuit (sense resistor, DUT socket, signal
+conditioning) didn't exist yet. So instead of waiting, the DAC output was
+wired straight into an ADC input with nothing in between. This proves the *data path* — can the ESP32 reliably generate a
 signal and read a signal back, sample it correctly, and get it over serial
 without garbage — completely independent of whether the analog front-end
 hardware works yet.
@@ -141,11 +150,16 @@ Once the real circuit is ready, this exact same sketch design gets a second
 ADC channel added (V and I) and gets pointed at the real DUT instead of a
 wire — nothing else about the downstream code changes.
 
+That is how it went. The Case 1 board (2026-11-26/27) reads node A and node B
+on GPIO34/35 with the same five-column frame; `hardware/reader.py` gained the
+front-end conversion (dividers, zero-cal, drift correction), and the ML code
+didn't change.
+
 ## 5. The full pipeline, end to end
 
 ```
 [ESP32]  DAC ── drive sine ──►  [circuit + DUT]  ── V, I ──►  ADC  ──USB──►  [PC / Python]
-                                     (loopback: DAC→ADC directly for now)          │
+                (Case 1: drive amp ×5.92, followers + dividers on node A/B)        │
                                                                                     ▼
    raw {v, i, phase, A, Rr}            <- physical measurement, per-sample arrays
         │
@@ -157,7 +171,7 @@ wire — nothing else about the downstream code changes.
    signature (360 × 2 array)           <- the "shape" — this is the fingerprint
         │
         │  features.py: reduce the shape to 14 interpretable numbers
-        │                (loop area, slope, symmetry, knee sharpness, etc.)
+        │                (loop area, slope, symmetry, knee voltage, etc.)
         ▼
    feature vector (14,)
         │
@@ -169,23 +183,28 @@ wire — nothing else about the downstream code changes.
         │                                    one feature vector through them
         ▼
    verdict: GOOD / FAULTY  (+ confidence, detected component type, anomaly flag)
+        │
+        │  hardware/autorange.judge: open/short and the |Z|/Rr range check
+        │                            from the lock-in value
+        ▼
+   final answer: GOOD / FAULTY / OUT_OF_RANGE  (+ measured value)
 ```
 
 The **golden rule** (CLAUDE.md #3): `calibrate.py` and `features.py` must
 run identically whether the raw data came from `synth.py` (synthetic, what
-everything is validated on today) or from real hardware. That's *why*
-Stage 3's serial output is being designed to match the raw dict format
-exactly — so the ML pipeline downstream never has to know or care whether
-the V-I loop it's classifying came from a simulated component or a real
-one sitting on the bench.
+the model is trained on) or from real hardware. That's *why* the reader
+turns every capture into exactly the raw dict format — so the ML pipeline
+downstream never has to know or care whether the V-I loop it's classifying
+came from a simulated component or a real one sitting on the bench.
 
 ## 6. One-paragraph summary
 
 The DAC's job is to *create* the sweep of voltages needed to trace a curve
 at all. The ADC's job (on two channels) is to *record* how the part
 responded — its actual V and its I — at each point in that sweep, so a full
-loop can be reconstructed. Loopback is a temporary wiring trick to test that
-generate-and-record data path before the real analog front-end exists.
+loop can be reconstructed. Loopback was a temporary wiring trick to test that
+generate-and-record data path before the real analog front end existed; the
+Case 1 board has replaced it.
 Everything from `calibrate.py` onward is agnostic to where the raw
 `{v, i, phase, A, Rr}` data came from — synthetic, loopback, or real
 hardware — as long as it's shaped the same way.

@@ -75,6 +75,24 @@ verify(raw) -> {
 }
 ```
 
+### 4b. The tester's final answer (`hardware/autorange.judge`)
+
+```python
+judge(raw, ml) -> {
+    "verdict": str,    # 'GOOD' | 'FAULTY' | 'OUT_OF_RANGE'   ← what the tester shows
+    "range":   str,    # 'ok' | 'open' | 'short' | 'nonlinear' | 'below' | 'above'
+    "reason":  str,    # one line for the user, e.g. which Rr or frequency to use instead
+    "z_ohm":   float,  # |Z| from the lock-in at the drive frequency
+    "ratio":   float,  # |Z| / Rr
+    "snr":     float,  # drive-frequency current over the residual noise
+    "ml":      dict,   # the verify(raw) output above, unchanged
+}
+```
+
+`ml` is the model's opinion; `verdict` is the tester's answer. In order: SNR < 8 → FAULTY
+(open); strong harmonics (a diode, LED or Zener) → the model's verdict; |Z| < max(5 Ω, 1 % of Rr)
+→ FAULTY (short); |Z|/Rr outside 0.25–4 → OUT_OF_RANGE; otherwise the model's verdict.
+
 ## 5. Saved model files (models/)
 
 `train.py` writes: `health_rf.joblib`, `type_rf.joblib`, `anomaly_if.joblib`, `meta.joblib`
@@ -106,9 +124,10 @@ Preceded once at boot by comment lines (prefixed `#`, skip when parsing) carryin
 settings: `drive_freq_hz`, `lut_size`, `dac_center`, `dac_amplitude_counts`, `A_nominal_v`
 (nominal/uncalibrated drive amplitude — see Stage 2's measured offset/gain note in
 `firmware/esp32/README.md`), `Rr_ohm_placeholder` (loopback has no real sense resistor yet),
-`vref`, `dac_bits`, `adc_bits`, `baud`. Case 1 firmware (`firmware/esp32/case1/case1_frontend`)
-also sends `frontend_case=1` and `dac_inverted=1`; `reader.py` uses `frontend_case` to pick
-`FrontEnd.case1()` (followers + 100k/22k/22k dividers, no loading term) over the Stage 1 default.
+`vref`, `dac_bits`, `adc_bits`, `baud`. The Case 1 firmwares (`firmware/esp32/case1/*`) also
+send `frontend_case=1` and `dac_inverted=1`; `reader.py` uses `frontend_case` to pick
+`FrontEnd.case1()` over the Stage 1 default: followers + 100k/20k/20k dividers (22k was planned),
+each channel with its own measured resistor values, and no loading term.
 
 `t_us` was added on top of the originally proposed `index,adc_ch_v,adc_ch_i` shape because
 Stage 3 samples free-running (no fixed-interval timer) — `phase_rad` is computed firmware-side
@@ -139,6 +158,13 @@ phase wrap), converts counts → volts through a per-channel `ChannelCal(offset,
 I = V_senseR / Rr, and packs the raw dict from section 1 using the already-provided
 `phase_rad` directly. The default `ChannelCal` is the *ideal* `counts * 3.3/4095` at mid-rail,
 which Stage 2 showed is off on this board (`adc ≈ 16.0×dac − 231`); the loopback path
-(`--loopback`) re-centres on the sine midpoint instead, and real captures need a fitted
-offset/gain per channel — still TODO. Firmware may move to a compact binary block for speed once real capture
-rates go up — keep the decoded result identical to section 1 either way.
+(`--loopback`) re-centres on the sine midpoint instead. On Case 1 the corrections are split
+like this:
+- firmware: raw ADC → mV through the chip's eFuse calibration (`case1_frontend_mf` uses the full
+  4096-entry table), sent as counts on the ideal `vref/4095` scale;
+- `FrontEnd.case1()`: each channel's divider gain and offset, from its measured resistors;
+- zero-cal (`reader.zero_cal`, a capture with no DUT): each channel's remaining offset at 0 V;
+- offset reference (`reader.ref_corrected`): the drift since the zero-cal, from `ref_counts`.
+
+Firmware may move to a compact binary block for speed once real capture rates go up — keep the
+decoded result identical to section 1 either way.

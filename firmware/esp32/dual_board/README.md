@@ -6,9 +6,9 @@ through `hardware/reader.py` → `calibrate.py` → `features.py`. See "What's p
 below for exactly what that does and doesn't confirm. **This whole two-board split, and the
 external-generator sync plan in "Next steps" item 3 below, are superseded** — per Dr. Wathis
 the drive goes back to the ESP32's own DAC (through the confirmed ±10V drive stage), so there's
-only one board again and no inter-board sync problem to solve. The new plan is a single ESP32
-split across **two FreeRTOS cores** (drive / capture) instead — see
-`firmware/esp32/README.md` "Dual-core single-board plan" and `docs/ROADMAP.md` Phase A. This
+only one board again and no inter-board sync problem to solve. The replacement, a single ESP32
+split across **two FreeRTOS cores** (drive / capture), is built: it is the Case 1 board and
+its firmware (`firmware/esp32/README.md`, `docs/CASE1_WIRING.md`). This
 file is kept for the record (the capture-unit code and the "phase from a known reference, not
 geometry" reasoning both carry over) but is no longer the active plan.
 

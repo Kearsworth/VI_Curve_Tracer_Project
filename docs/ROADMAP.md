@@ -2,7 +2,7 @@
 
 Ordered roughly by priority. Check items off as they land.
 
-## Phase A — Hardware/software integration (current focus)
+## Phase A — Hardware/software integration (mostly done: the Case 1 board works end to end)
 - [x] ESP32 firmware: generate sine on DAC, read 2 channels on ADC at a fixed, known
       sample rate, stream over USB serial. See `firmware/esp32/README.md`.
       — Stage 3 (`firmware/esp32/loopback/sine_capture`) written and **verified on real
@@ -23,7 +23,8 @@ Ordered roughly by priority. Check items off as they land.
       per-channel `ChannelCal`; the default is the ideal formula, which is known to be off on
       this ESP32 (Stage 2), so `--loopback` re-centres each channel on its own sine midpoint.
       That is loopback-only — the real circuit needs a proper offset/gain sweep plus the
-      ±10V→0–3.3V return-path gain (still unconfirmed).
+      ±10V→0–3.3V return-path gain (still unconfirmed). *Done for Case 1 (2026-11-26/27):*
+      `FrontEnd.case1` (each divider's measured gain), zero-cal, and the GPIO32 drift reference.
 - [x] Verify a full real capture flows through calibrate→features→verify without changes
       to the ML code. **Done 2026-09-29/30** via the two-board setup below — real captures,
       zero ML-code changes, verdicts came back correctly for all three test shapes.
@@ -46,8 +47,8 @@ Ordered roughly by priority. Check items off as they land.
       `hardware/live_pipeline_demo.py` is the live version (both boards read continuously,
       shape switchable with r/c/d keys, shows raw→calibrated→verdict updating in real time) —
       used for the 2026-09-30 professor demo.
-- [ ] **Dual-core single-board bring-up (updated 2026-10-04, supersedes the external-generator
-      sync plan — not yet tested):** per Dr. Wathis, the drive goes back to the ESP32's own DAC
+- [x] **Dual-core single-board bring-up (updated 2026-10-04, supersedes the external-generator
+      sync plan; done in its Case 1 form 2026-11-26/27):** per Dr. Wathis, the drive goes back to the ESP32's own DAC
       (through the confirmed ±10V drive stage), not an external source — so the two-board setup
       and its sync-pulse problem are retired. New plan: one ESP32, two FreeRTOS tasks pinned
       one per core (`xTaskCreatePinnedToCore`) — Core A drives the DAC sine from a LUT (reusing
@@ -61,9 +62,10 @@ Ordered roughly by priority. Check items off as they land.
       **verified on hardware 2026-10-09** (core split works, ~65 samples/cycle, V/I corr
       0.9993 on two real pins — numbers in `firmware/esp32/README.md`). Logic analyzer then found
       UART saturation causing ~1.6 ms sample holes; fixed the same day (bounded line length +
-      fixed 333 µs sample grid → 0 dropped samples). Steps 2–4 remain.
-      **Blocked on:** the **return path** circuit (±10V→0–3.3V) — still unconfirmed, and now
-      required (no more external-generator detour around it).
+      fixed 333 µs sample grid → 0 dropped samples). Steps 2–4 were done by the Case 1 build
+      (next items): the drive stage, the return path (OPA4134 followers + dividers) and real DUTs.
+      Every Case 1 sketch keeps this core split (core 0 drive, core 1 ADC). `live_pipeline_demo.py`
+      was not ported to Case 1.
       ~~Old plan, retired 2026-10-04: external voltage source/function generator driving the
       DUT directly with a sync pulse into GPIO27 (two options worked out, comparator-IC
       fallback if chatter) — see `dual_board/README.md` Next steps item 3 for the superseded
@@ -105,32 +107,39 @@ Ordered roughly by priority. Check items off as they land.
       2-minute check the corrected baseline stayed within ~25 mV where the uncorrected one moved
       26–62 mV. Still to see: a long run (tens of minutes, a power cycle). The zero must be taken
       with this firmware (`docs/CASE1_WIRING.md` ADC step 3).
-- [ ] **ADC decision experiment (this week):** flash `firmware/esp32/loopback/adc_step`, run
+- [ ] **ADC decision experiment:** flash `firmware/esp32/loopback/adc_step`, run
       `python3 hardware/adc_check.py --port <port>` with a multimeter on GPIO34. Budget ≈ 2
       counts (10 mV at the ±10 V return-path scale). PASS → internal ADC; BORDERLINE → also
       order the external ADC; FAIL → external ADC (AD7606-class: simultaneous, ±10 V input).
       Write ADR-0001 once chosen. Budget ceiling was $30 (external module may need ~$40);
       2–3 weeks lead time.
-- [ ] Drive at ~1 kHz for real C/L captures (synthetic data is tuned to 1 kHz: 100 nF and
-      100 mH look open/short at 50 Hz). 50 Hz is for bring-up and R/D/LED only. Needs fast
-      capture: DMA on the internal ADC, or the external ADC.
-- [ ] Measured `A` + amplitude leveling: a return-path/drive-node channel gives `A`; the PC
-      sends an amplitude command over serial (small firmware addition) and re-captures until
-      measured `A` = 5 V ± 1–2%. Then `reader.capture_to_raw` uses the measured value.
-- [ ] Current = (V_drive − V_dut) / Rr from two matched channels, subtracted in software;
-      calibrate the relative gain once with the DUT removed (open circuit) and once with a
-      precision resistor. Fall back to a difference amp across Rr only if the numbers demand it.
+      *Status 2026-11-28:* this step test and ADR-0001 were never done. Case 1 runs on the
+      internal ADC (DMA, the eFuse calibration table, zero-cal, GPIO32 offset reference) and reads
+      24 kit resistors within ±1.5 % of a multimeter, so nothing has needed the external ADC yet.
+- [x] Drive at ~1 kHz for real C/L captures (synthetic data was tuned to 1 kHz then: 100 nF and
+      100 mH look open/short at 50 Hz). Done with DMA on the internal ADC: `case1_frontend_1k`
+      (2026-11-27), then `case1_frontend_mf` (1 kHz … 1 Hz). Real C captured; no real L yet
+      (Phase B).
+- [x] Measured `A`: `reader.frontend_to_raw` takes A from node A itself (half its 1st–99th
+      percentile span). Amplitude leveling wasn't built: it is only needed if A leaves synth's
+      4–6 V band, and the board sits at ≈ 4.66 V.
+- [x] Current from two matched channels, in the Case 1 form: the DUT sits between node A and
+      node B with Rr from node B to GND, so V_DUT = V_A − V_B and I = V_B / Rr
+      (`reader.FrontEnd.dut`), each channel with its own measured divider gain
+      (`FrontEnd.case1`). A short-circuit sweep shows the two channels agree within 0.25 % and
+      1 µs (`docs/CASE1_WIRING.md` ADC step 3).
 
-## Phase B — Real data & validation
-- [ ] **Retrain `synth.py` at A = 10 V** (added 2026-11-25) before trusting D/LED/Zener
-      verdicts from the Case 1 ±10 V front end (`docs/BOM.md`). `calibrate.py` divides V by
-      A, so a ~0.6 V diode knee lands at 0.6/5 = 0.12 in training but 0.6/10 = 0.06 at ±10 V:
-      a different normalised shape, i.e. out-of-distribution. R, C, L scale with A and are
-      unaffected. Today `synth.py` uses A = 5 for R/C/L/D/LED and A = 6 for Zener. Either
-      switch to A = 10 or add A = 10 alongside the existing A, then rerun `pytest` (the
-      accuracy-floor test retrains the models). Reasoning: `docs/BOM.md` §5.
-- [ ] Once the advisor's circuit is ready, capture real signatures for R/C/L/D/LED/Z,
-      good and (deliberately created) faulty. *Started 2026-11-27:* `hardware/captures/`
+## Phase B — Real data & validation (current focus)
+- [ ] **Retrain `synth.py` at A = 10 V — only if the drive is raised to ±10 V** (added
+      2026-11-25). `calibrate.py` divides V by A, so a ~0.6 V diode knee lands at 0.6/5 = 0.12
+      in training but 0.6/10 = 0.06 at ±10 V: a different normalised shape, i.e.
+      out-of-distribution. R, C, L scale with A and are unaffected. Since 2026-11-27 `synth.py`
+      draws A from 4–6 V for every component (Zener included), and the Case 1 firmware drives
+      A ≈ 4.66 V, so D/LED verdicts today are in distribution. If the amplitude goes up, add
+      A = 10 to the training set, then rerun `pytest` (the accuracy-floor test retrains the
+      models). Reasoning: `docs/BOM.md` §5.
+- [ ] Capture real signatures for R/C/L/D/LED/Z on the Case 1 board, good and (deliberately
+      created) faulty. *Started 2026-11-27:* `hardware/captures/`
       (labels.csv) has R, C, diode, LED good; open, short, reversed diode, reversed LED; and soft
       faults built from good parts (leaky C, high-ESR C, degraded diode). Since 2026-11-27 also
       24 good resistors 100 Ω – 300 kΩ from a 1 % kit (`hardware/collect.py r`): all GOOD, values
@@ -140,7 +149,8 @@ Ordered roughly by priority. Check items off as they land.
       (`r_oor`: 10 Ω, 47 Ω, 470k, 1M) the values are still right but the model calls the
       extremes FAULTY (short-/open-like shapes). Done: `autorange.judge` answers OUT_OF_RANGE with the
       value when |Z|/Rr is outside 0.25–4, open/short from the current and |Z|, and the model's
-      verdict everywhere else (all 52 scored captures stay with the model). Still missing L and Zener.
+      verdict everywhere else (all 52 scored captures stay with the model). Still missing L,
+      Zener and an electrolytic C.
 - [ ] Re-run evaluation on real held-out data; compare to the synthetic numbers.
       *First pass 2026-11-27:* `python3 hardware/eval_real.py` → 52/52 verdicts correct (still
       too few to compare with the ~98 % synthetic number; soft faults are strong versions only).
@@ -149,10 +159,16 @@ Ordered roughly by priority. Check items off as they land.
 
 ## Phase C — Model quality (soft faults)
 - [ ] Quick experiment first: benchmark ANN and SVM against the current RF on the
-      *existing* 12 features, focused on the 3 known-weak soft faults. Motivated by
-      docs/LITERATURE.md §3 — a closely related published study found ANN/SVM beating RF
-      specifically on soft faults. Cheaper to try than new features; do this before or
-      alongside the item below.
+      *existing* 14 features, focused on the weakest soft faults (2026-11-28,
+      `vi_ml/eval_synth.py`: Zener leak 81 %, shorted turns 83 %, high-ESR C 84 %, leaky C 87 %).
+      Motivated by docs/LITERATURE.md §3 — a closely related published study found ANN/SVM
+      beating RF specifically on soft faults. Cheaper to try than new features; do this before
+      or alongside the item below.
+- [ ] Report MCC, a confusion matrix and the RF's train-vs-test gap, as the soft-fault
+      literature does (docs/LITERATURE.md §3, §7). *Partly done 2026-11-28:*
+      `vi_ml/eval_synth.py` prints MCC (0.94), the health confusion matrix and recall per fault
+      on 7,200 unseen synthetic samples. The train/test gap isn't printed by any script yet (a
+      one-off check on `train.py`'s split: 99.5 % train vs 97.4 % test).
 - [ ] Add features targeting soft faults: reverse-leakage slope, ESR tilt / loss tangent,
       diode knee sharpness. *Partly done 2026-11-27:* `off_slope` (reverse leakage) and
       `on_res` (forward series R) in `features.py`; ESR tilt and knee sharpness still open.
@@ -172,6 +188,11 @@ Ordered roughly by priority. Check items off as they land.
 - [ ] UI (not designed yet — plan first: likely a simple desktop or web app that shows the
       live signature + verdict). Reuse `verify.verify(raw)` as the backend call.
 - [ ] Package as a single device flow (ESP32 does drive + capture; PC or phone shows result).
+- [ ] (Later, owner's idea 2026-11-27) Rr chosen without a hand-moved jumper: relays, or a
+      potentiometer whose actual value an ESP32 pin senses.
+- [ ] (Later) A wider range: Rr 1 MΩ for the high side; a low amplitude or a current limit for
+      the low side (an Rr below 220 Ω at ±4.66 V asks more current than the op-amp gives).
+      Today parts outside |Z|/Rr 0.25–4 get OUT_OF_RANGE.
 
 ## Phase E — Optional / research
 - [ ] 1D-CNN or Siamese network on the raw 360-point signature (this is where PyTorch

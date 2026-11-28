@@ -7,7 +7,7 @@ can't do that for every capacitor (0.1 uF wants 1 kHz with Rr 1k, 1000 uF wants 
 rule synth trains on: synth.auto_range over synth.TEST_FREQS_HZ x synth.RR_OPTIONS.
 
   python3 hardware/autorange.py                  # Rr connected now: tools/board_settings.json
-  python3 hardware/autorange.py --rr 1022 --rr-values 217,1022,10000,100000
+  python3 hardware/autorange.py --rr 1022 --rr-values 221.4,1022,10290,101300
 
 Needs firmware case1_frontend_mf (selectable frequency). Steps:
   1. reset the board, take one 1 kHz burst with the Rr connected now

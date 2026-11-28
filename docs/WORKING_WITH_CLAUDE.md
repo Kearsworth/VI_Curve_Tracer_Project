@@ -17,7 +17,9 @@ pytest -q
 ```
 
 The tests encode the invariants (calibrate output is 360×2, no NaN, capacitor and inductor
-have opposite rotation sign, health accuracy stays above a floor, results are reproducible).
+have opposite rotation sign, health accuracy stays above a floor, results are reproducible),
+and since November also the serial reader, auto-range and the verdict of every labelled real
+capture (188 tests on 2026-11-28).
 If Claude breaks an intentional behavior, a test fails and it will notice. **Tell Claude:
 "make the change, then run pytest and fix anything that breaks."** Add a new test whenever
 you add a feature — it becomes permanent protection.
@@ -25,9 +27,9 @@ you add a feature — it becomes permanent protection.
 ## 2. Give scoped tasks, not vague ones
 
 - Weak: "improve the model."
-- Strong: "In `features.py`, add a `reverse_leakage_slope` feature for diodes/Zeners,
-  append it to `FEATURE_NAMES`, retrain via `train.py`, and report the new per-fault recall
-  from `check_demo`-style evaluation. Run pytest."
+- Strong: "In `features.py`, add an `esr_tilt` feature for capacitors, append it to
+  `FEATURE_NAMES`, and report per-fault recall before/after with `python3 vi_ml/eval_synth.py`.
+  Run pytest and `python3 hardware/eval_real.py`."
 
 Point it at the file, say what to change, and say how to verify. One task at a time.
 
@@ -85,20 +87,21 @@ numbers; make Claude use them.
 
 ## 8. Good first prompts for this repo
 
-- "Read CLAUDE.md and docs/. Then run `python vi_ml/demo.py` and confirm the pipeline works,
-  and summarize the current accuracy."
-- "Read the ESP32 spec in firmware/esp32/README.md and propose the serial protocol and a
-  loopback test plan. Plan only, no code yet."
-- "Implement `hardware/reader.py` from `reader_stub.py` per docs/DATA_CONTRACT.md section 7.
-  Add a test that feeds a fake serial line and checks the raw dict shape. Run pytest."
+- "Read CLAUDE.md and docs/. Then run `python3 vi_ml/eval_synth.py` and
+  `python3 hardware/eval_real.py`, and summarize the current accuracy."
+- "Read docs/CASE1_WIRING.md ADC step 3 and propose an experiment that separates the possible
+  causes of the ~1 % R error at 91–333 Hz. Plan only, no code yet."
+- "Add the RF's train-vs-test accuracy gap to `vi_ml/eval_synth.py` (ROADMAP Phase C). Run
+  pytest."
 - "Add a soft-fault feature (knee sharpness) in features.py, retrain, and report per-fault
-  recall before/after. Keep other features unchanged. Run pytest."
+  recall before/after with `vi_ml/eval_synth.py`. Keep other features unchanged. Run pytest."
 
 ## 9. Housekeeping that pays off
 
 - Use **git** from day one; commit the initial skeleton first.
 - Keep `models/` out of git (already in `.gitignore`) — regenerate with `train.py`.
-- If you add real captured data, keep it in a `data/` folder and git-ignore large/raw files.
+- Real captures go in `hardware/captures/` with a row in `labels.csv`
+  (`hardware/captures/README.md`); they're small text files, so they're committed.
 - Re-run `pytest` before you consider any task "done".
 
 ## 10. When Claude is unsure
