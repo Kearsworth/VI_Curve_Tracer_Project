@@ -26,9 +26,15 @@ The question is "is it good or faulty?" → a **label**, not a number. Health is
 type is 6-class. Predicting the exact component value (e.g. "2.1 kΩ") would be regression
 and is explicitly out of scope for now.
 
+The tester does print a value (e.g. "995 Ω", "100.6 nF"), but that is a measurement, not a
+prediction: a lock-in of the drive-frequency component gives Z = V/I directly
+(`hardware/autorange.lockin_z`). The model never sees or outputs it.
+
 ## Why 360 points, indexed by DRIVE PHASE
 
-- **Fixed length**: raw captures vary in length (~1600 points, and not identical each time).
+- **Fixed length**: raw captures vary in length (the Case 1 burst firmware sends 50 points per
+  cycle for up to 32 cycles, the older 50 Hz sketches stream 50–65 per cycle, synth draws
+  40–60).
   A model can't compare variable-length inputs point-by-point. Resampling to a fixed 360
   makes every signature the same shape → directly comparable, no time-warping needed.
 - **Drive phase, not geometric angle**: we index by the phase of the *drive signal* (ωt,
@@ -42,8 +48,8 @@ and is explicitly out of scope for now.
   accuracy is essentially flat — the signal has few harmonics. 360 is generous (1 point /
   degree), clean, and leaves headroom for sharp features. 400 gives no measurable gain;
   smaller (e.g. 180) would also work. Don't "upgrade" to 400 expecting improvement.
-- **Coverage**: we capture ≥1 full drive cycle (the code uses ~4), so all 0–360° are
-  swept; calibration folds the cycles together, bins per degree, averages, and interpolates
+- **Coverage**: we capture ≥1 full drive cycle (synth draws 8–24, the board sends up to 32),
+  so all 0–360° are swept; calibration folds the cycles together, bins per degree, averages, and interpolates
   any empty bin. The loop is covered by construction; which quadrants it occupies is part
   of the signature (a resistor is Q1/Q3 only — that's correct, not a gap).
 
@@ -73,24 +79,24 @@ axes independently.
   tuning cost — that's a deliberate trade-off we're making, not a literature-settled fact.
   See `docs/LITERATURE.md` §3 before treating RF's superiority as proven.
 - **Isolation Forest (anomaly)**: trained on **good parts only**, flags anything unusual.
-  Matches the real world where faulty examples are rare. Lower AUC (0.87) than the
-  supervised model, but needs no faulty data.
+  Matches the real world where faulty examples are rare. Lower AUC than the supervised
+  model (0.82 on the full-value-range synth, `vi_ml/eval_synth.py`; it was 0.87 on the old
+  one-value synth), but needs no faulty data.
 - **PyTorch / deep learning (future only)**: 1D-CNN / Siamese / autoencoder are on the
   roadmap for when there's enough *real* data. Not in the current runtime path.
 
-## Why 12 features instead of 720 raw numbers
+## Why 14 features instead of 720 raw numbers
 
 - Lower dimensionality → learns well from small data, less overfitting.
 - Each feature has physical meaning → the model is explainable, and we inject domain
   knowledge (loop area ↔ reactance, knee ↔ diode, rotation ↔ C vs L).
 - Raw 720-point input is reserved for a future CNN.
 
-The 12 features (see `features.py`): `signed_area, abs_area, slope0, phaseVI, aspect,
-knee_V, symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio`.
-
-2026-11-27: two soft-fault features added (14 total), still physical: `off_slope` (dI/dV on
-the blocking side at low current = junction leakage) and `on_res` (dV/dI past the knee on the
-conducting side = series resistance). On the full-value-range synth they lifted Zener-leak
+The 14 features (see `features.py`): the original 12 — `signed_area, abs_area, slope0,
+phaseVI, aspect, knee_V, symmetry, rms_radius, n_segments, peakV, peakI, spread_ratio` — and
+two soft-fault features added 2026-11-27, still physical: `off_slope` (dI/dV on the blocking
+side at low current = junction leakage) and `on_res` (dV/dI past the knee on the conducting
+side = series resistance). On the full-value-range synth they lifted Zener-leak
 recall from ~10% to ~85% and degraded-LED recall from ~20% to ~96%; `slope0` couldn't see
 either because its window around 0 V is dominated by the forward knee.
 
@@ -110,6 +116,19 @@ A shorted part looks like "short"; an open part looks like "open" — not like t
 component. So the type classifier (trained on good parts) will output a wrong type for a
 faulty part. That's expected. The primary, trustworthy output is the good/faulty verdict.
 
+## Why the tester can answer OUT_OF_RANGE (added 2026-11-27)
+
+After normalisation a linear part's loop depends on |Z|/Rr, and synth only trains |Z|/Rr near
+1 (auto-range picks 0.5–2). Far outside that, a good part's loop looks like a fault: a good
+10 Ω on Rr 221 Ω is an almost vertical line, like a short; a good 1 MΩ on Rr 101 kΩ is almost
+flat, like an open. The model called both FAULTY, which is right for the shapes it was trained
+on. So `hardware/autorange.judge` checks the lock-in first: no current → FAULTY (open), |Z|
+near 0 → FAULTY (short), |Z|/Rr outside 0.25–4 on a linear part → OUT_OF_RANGE with the value
+and the Rr or frequency to try instead; everything else gets the model's verdict. A part with
+strong harmonics (diode, LED, Zener) skips the short and range checks and gets the model's
+verdict. All 52
+scored real captures stay with the model (`tests/test_autorange.py`).
+
 ## Why synthetic data
 
 No public dataset of V-I signatures exists, and real faulty parts are hard to collect in
@@ -117,6 +136,13 @@ quantity. We generate signatures from circuit equations (Ohm's law for R; phasor
 Shockley for diodes/LED/Zener), for 6 components × good + faulty, with augmentation (noise,
 phase jitter, amplitude variation). This lets us build and test the whole system before the
 hardware is ready; the plan is to fine-tune / re-validate on real data later.
+
+Since 2026-11-27 synth draws every value over the whole range (R 100 Ω–300 kΩ, C 1 nF–1000 µF,
+L 10 mH–10 H), picks the drive frequency and Rr with the same auto-range rule the board uses,
+and adds the Case 1 board's measured imperfections (node noise and offset, ADC crosstalk and
+spikes, V/I skew, phase-locked sampling). Real captures so far agree with it: the 52 labelled
+ones all come out right, and the real good/faulty boundaries of graded soft faults match
+synth's ranges (`docs/CASE1_WIRING.md` ADC step 3).
 
 ## Train/serve consistency
 

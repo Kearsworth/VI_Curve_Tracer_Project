@@ -1,9 +1,62 @@
-# ESP32 firmware (plan / spec) — not implemented yet
+# ESP32 firmware
 
-Goal: the ESP32 becomes the whole front-end — it *generates* the drive signal and *reads*
-the response, then streams samples to the PC. See `../../docs/DATA_CONTRACT.md` §7.
+The ESP32 drives the DUT (DAC → drive stage) and reads it back (ADC), then sends the samples to
+the PC over USB serial; the PC turns them into the raw dict of `../../docs/DATA_CONTRACT.md` §1,
+so the ML pipeline never changes. Frame format: `DATA_CONTRACT.md` §7. Board: ESP32 DevKit V1
+("DOIT ESP32 DEVKIT V1"), Arduino C++ on arduino-esp32 core 3.x (ESP-IDF 5 drivers).
 
-## Responsibilities
+## Which sketch
+
+| Sketch | What it is | Status |
+|---|---|---|
+| `case1/case1_frontend_mf` | Case 1 board: drive 1 kHz … 1 Hz (`f <hz>`), ADC by DMA, bursts, GPIO32 offset reference | **current: flash this one** |
+| `case1/case1_frontend_1k` | Case 1 board: 1 kHz only, ADC by DMA, bursts | fallback (2026-11-27) |
+| `case1/case1_frontend` | Case 1 board: 50 Hz, polled `analogReadMilliVolts()`, streams | fallback, bring-up (2026-11-25/26) |
+| `standalone/stage1_frontend` | the ±5 V standalone front end (`docs/STANDALONE_TESTER_PLAN.md`) | compiles; that board was never built |
+| `dual_core/dual_core_loopback` | DAC → ADC jumper, drive and capture on separate cores | verified 2026-10-09 (below) |
+| `loopback/sine_capture` | DAC → ADC jumper, 50 Hz sine + framing (Stage 3) | verified 2026-09-15 (below) |
+| `loopback/loopback_check` | DAC ramp → ADC (Stage 2) | verified 2026-09-14 (below) |
+| `loopback/adc_step` | DAC steps for the ADC decision experiment (`hardware/adc_check.py`) | the experiment was never run |
+| `loopback/adc_timing` | measures the V→I read gap; holds the DAC at 128 | used in Case 1 step 4 to hold the DAC (below) |
+| `dual_board/*` | two-board signature generator + capture unit | retired 2026-10-04 (`dual_board/README.md`) |
+
+Flash with arduino-cli (or the Arduino IDE with the same board):
+
+```bash
+arduino-cli compile --fqbn esp32:esp32:esp32doit-devkit-v1 firmware/esp32/case1/case1_frontend_mf
+arduino-cli upload  --fqbn esp32:esp32:esp32doit-devkit-v1 -p <port> firmware/esp32/case1/case1_frontend_mf
+```
+
+## The Case 1 firmware (`case1/case1_frontend_mf`)
+
+- **Pins:** GPIO25 = DAC into OPA4134 channel A (an inverting difference amp, gain 5.92 measured);
+  GPIO34 = node A through follower C and a divider; GPIO35 = node B through follower D and a
+  divider; GPIO32 = the offset-reference divider. Wiring: `docs/CASE1_WIRING.md`.
+- **Two cores, one clock:** a drive task on core 0 writes a 100-step sine LUT to the DAC; `loop()`
+  on core 1 runs the ADC. Both read `esp_timer`, so every point is labelled with the drive phase
+  without a sync wire (CLAUDE.md design decision #2). `reader.py` then aligns the labels to node A.
+- **ADC:** continuous (DMA) mode at a fixed 100k conversions/s, GPIO34 and GPIO35 alternating.
+  The drive is 1000/M Hz (M = 1…1000) and each point averages M (V, I) pairs, so every frequency
+  gives 50 points per cycle, phase-locked. V is trapezoid-weighted so its mean sample time equals
+  I's, which cancels the 10 µs V→I gap. Raw → mV uses the chip's full eFuse calibration table.
+- **Bursts:** up to 32 whole cycles go into RAM, then out at 921600 baud (the UART can't keep up
+  live at 1 kHz), then a 500 ms gap. After each burst the ADC reads GPIO32 2000 times (~20 ms) and
+  adds `ref_counts=` to the `# burst=` line; `reader.py` uses it to cancel offset drift.
+- **Serial commands:** `f <hz>` (snapped to 1000/M Hz), `n <cycles>` (1–32 per burst), `?`. Each
+  is answered with `# ok ...`; a reset goes back to 1 kHz and 32 cycles.
+- **Drive constants:** `DAC_CENTER = 132`, `DAC_AMPLITUDE_COUNTS = 63` → A ≈ 4.66 V at node A,
+  inside synth's 4–6 V. The LUT is inverted because channel A inverts.
+- **PC side:** `hardware/reader.py --frontend --rr <ohm>` (one capture), `hardware/autorange.py`
+  (frequency + Rr per part, and the final answer), `hardware/collect.py` (batch capture).
+
+---
+
+# History: how the firmware got here (2026-09 → 2026-10)
+
+The rest of this file is the bring-up record, kept for its measurements and reasons. Its status
+notes are dated: where they say "not yet", the Case 1 build has since done it (marked inline).
+
+## Responsibilities (original spec, 2026-09)
 1. **Drive (DAC):** output a sine wave (start ~1 kHz) as the source signal.
 2. **Capture (ADC):** read two channels at a fixed, known sample rate:
    - CH_V  = voltage across the DUT
@@ -12,7 +65,7 @@ the response, then streams samples to the PC. See `../../docs/DATA_CONTRACT.md` 
 4. **Phase reference:** because the ESP32 generates the drive itself, it knows the phase of
    every sample exactly — include a sample index or timestamp so the PC can compute phase.
 
-## Current milestone: LOOPBACK
+## Loopback (Stages 2–3, 2026-09)
 Wire DAC output directly to an ADC input (bypass the circuit + DUT). Send a known waveform,
 read it back, and confirm the round-trip matches. This validates the send/receive path and
 the counts→volts conversion before the real circuit is available.
@@ -69,7 +122,7 @@ Concrete decisions made (previously open below):
   currently aliased to the same pin as `ADC_V_PIN` (no real sense resistor exists yet); wiring
   it to a real second channel is meant to be a one-line change once the circuit exists.
 
-## Two-board bring-up — RETIRED 2026-10-04
+## Two-board bring-up — retired 2026-10-04
 
 See `dual_board/README.md` — a bring-up path, alongside the loopback above, that split
 signature generation and capture across two ESP32 boards while the drive was planned as an
@@ -77,13 +130,14 @@ external voltage source. **Superseded**: per Dr. Wathis the drive goes back to t
 DAC, so there's one board again — see "Dual-core single-board plan" below. Kept for the
 record; the capture-unit code and the phase-from-known-reference reasoning both carry over.
 
-## Dual-core single-board plan (current plan, replaces the two-board/external-generator path)
+## Dual-core single-board plan (2026-10-04; built as the Case 1 firmware)
 
 **Why:** the drive is the ESP32's own DAC again (through the confirmed 0–3.3V→±10V drive
 stage below), not an external source — so the inter-board sync-pulse problem from
 `dual_board/` doesn't exist to begin with. Per Dr. Wathis: split the one ESP32's two cores so
 drive and capture don't block each other — one core generates the sine, the other reads the
-ADC and streams. Not yet implemented or tested; this section is the design to build against.
+ADC and streams. *Built:* step 1 below in October, then steps 2–4 as the Case 1 board
+(2026-11-26/27); every Case 1 sketch keeps this core split.
 
 ```
                      ESP32 (single chip, two FreeRTOS tasks, one per core)
@@ -164,18 +218,23 @@ already relies on — splitting onto two cores doesn't change that, it only stop
    `loop()` on core 1. Pass check: `python3 hardware/reader.py --port <port> --loopback`
    gives the same clean sine/line as `sine_capture` did.
 2. **Wire in the confirmed drive stage** (0–3.3V→±10V) between DAC and DUT.
+   — **Done 2026-11-26** in Case 1: OPA4134 channel A, gain 5.92 measured.
 3. **Build/confirm the return path** (±10V→0–3.3V) — this is the actual blocking item now,
    not sync. Nothing past step 1 is safe to run on real ±10V without it (ADC absolute max is
    3.3V).
+   — **Done 2026-11-26** in Case 1: followers C/D into 100k/20k/20k dividers; the ADC pins stay
+   inside 0.32–2.71 V even with the op-amp saturated.
 4. Re-run `hardware/dual_board_signature_check.py`-style validation (correlation/aspect ratio
    checks) against a real DUT once steps 2–3 are done, then fold into
    `hardware/live_pipeline_demo.py`.
+   — **Done differently:** real DUTs went through `reader.py --verify`, `hardware/eval_real.py`
+   and `hardware/autorange.py`; `live_pipeline_demo.py` was not ported to Case 1.
 
 **Carries over unchanged from the single-board loopback section above:** the DAC/ADC
-nonlinearity-needs-calibration finding, the "measured `A`" distinction (§ ROADMAP "Measured A
-+ amplitude leveling" — now sourced from the return-path-converted drive-node voltage, not the
-DAC's nominal volts), and the 1kHz-drive / DMA-ADC roadmap item (still open, independent of
-this core split).
+nonlinearity-needs-calibration finding, the "measured `A`" distinction (the ROADMAP "Measured
+`A`" item — now sourced from the return-path-converted drive-node voltage, not the DAC's nominal
+volts), and the 1kHz-drive / DMA-ADC roadmap item (independent of this core split; *done
+2026-11-27: `case1_frontend_1k`, then `case1_frontend_mf`*).
 
 **V→I sampling skew (`loopback/adc_timing/`) — written 2026-10-12, not yet run on hardware:**
 `loop()` reads V then I with two blocking `analogRead()` calls, so I is sampled ~one read
@@ -186,9 +245,15 @@ that is HIGH during the V read, for the logic analyzer
 (`sigrok-cli -d fx2lafw --config samplerate=24m --samples 2400000 --channels D0 -o adc_timing.sr`).
 Same loopback jumpers as above. Record the measured gap here once run — it decides whether
 the 1 kHz item needs simultaneous sampling (or a software I-phase correction) or not.
+*2026-11-28:* the gap was never recorded; Case 1 used this sketch only to hold the DAC at 128
+for the step-4 DC checks. The DMA sketches answered the question another way: V-I phase on a
+resistor ~0.3–0.5° at 1 kHz (`docs/CASE1_WIRING.md` ADC step 2). The 50 Hz polled sketch still
+shows ~2.4°, and its symmetric V-I-V reads showed the cause isn't the read order (ADC step 1).
 
-## Confirmed analog front-end: 0–3.3V ↔ ±10V level shifter
+## The advisor's drive stage: 0–3.3V ↔ ±10V level shifter
 *Confirmed with Dr. Wathis's circuit, 2026-09-15 — drive side only, see caveat below.*
+*As built in Case 1 (2026-11-26): the same difference amp on OPA4134 channel A with 10k and
+51k + 10k (gain measured 5.92), on ±15 V from a DD1718PA; the return path below exists now.*
 
 The DAC's native 0–3.3V sine can't drive a real DUT through its full bipolar range, so the
 advisor's circuit sits between the ESP32 DAC and the DUT: a **matched difference amplifier**
@@ -221,21 +286,18 @@ feeding ±10V from the DUT's response straight into GPIO34/35 would exceed the a
 rating. Whatever comes back from the DUT (V, and I via the sense resistor) needs a matching
 **down-conversion** stage (±10V → 0–3.3V) before the ADC reads it. This hasn't been shown or
 confirmed yet — treat it as an open item, not a given, until it's verified with Dr. Wathis.
+*Built 2026-11-26 in Case 1: a unity follower per node, then a 100k/20k/20k divider.*
 
 **Also affects `calibrate.py` later:** once this circuit is in the loop, the DAC's raw
 amplitude (`A_nominal_v` in the Stage 3 sketch) is no longer the same as the amplitude
 actually driving the DUT (`~10V`, after the ×6.04 gain) — normalization needs to account for
 this conversion, not just the DAC-side offset/gain already tracked above.
+*Handled: `reader.frontend_to_raw` measures A at node A on every capture.*
 
-## Things to decide when implementing
+## Things to decide when implementing (2026-09; all resolved)
 - ~~Sample rate and samples-per-cycle~~ — resolved above for Stage 3's loopback test; revisit
   once continuous/DMA sampling is needed to hit the ~1kHz production target.
-- ADC input range vs the ±signal: **drive side confirmed** (see level-shifter above); **return
-  side (attenuating the DUT's ±10V response back to 0–3.3V) still open** — needs a circuit and
-  confirmation before real (non-loopback) capture is safe to attempt.
+- ~~ADC input range vs the ±signal~~ — resolved by the Case 1 return path (followers +
+  dividers, built 2026-11-26).
 - ~~Serial baud / framing~~ — resolved above for Stage 3 (921600 baud, CSV with `t_us` +
-  `phase_rad`); may still need to move to a binary block once real capture rates go up.
-
-## Suggested language
-Arduino C++ (or MicroPython). Keep the decoded output on the PC identical to the raw dict
-in DATA_CONTRACT.md §1 so the ML pipeline never changes.
+  `phase_rad`); at 1 kHz the Case 1 sketches send bursts instead of moving to binary.

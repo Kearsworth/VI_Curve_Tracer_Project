@@ -5,6 +5,14 @@
 > classifier stack (`train.py`) or the evaluation code (`verify.py`), and before assuming
 > the RF-vs-SVM/KNN claim is settled.
 
+> **Update 2026-11-28 — our own numbers below are from September 2026.** Since then there are
+> 14 features (the 12 plus `off_slope` and `on_res`, 2026-11-27), the synthetic data covers
+> every value with the board's measured imperfections, and the Zener Vz-shift fault became Zener
+> leak. On 7,200 unseen synthetic samples (`python3 vi_ml/eval_synth.py`): health 97.3 %,
+> MCC 0.94, type 100 % on good parts, anomaly ROC-AUC 0.82; the weakest soft faults are Zener
+> leak 81 %, shorted turns 83 %, high-ESR C 84 % and leaky C 87 %. The MCC / confusion-matrix
+> follow-up from §3 is a `docs/ROADMAP.md` Phase C item.
+
 ## 1. Status of the "Selim et al., 2025" citation
 
 `docs/DESIGN.md` §"Why these models" cites "Selim et al., 2025" for the claim that Random
@@ -125,7 +133,7 @@ Dieste-Velasco (2a/2b):
 This project (CLAUDE.md §3):
   ESP32 DAC/ADC (or loopback) -> raw {v, i, phase, A, Rr}
       -> calibrate.py: 360-point phase-indexed resample + common-factor normalize
-      -> features.py: 12 interpretable time/phase-domain geometric features
+      -> features.py: 12 (now 14) interpretable time/phase-domain geometric features
       -> train.py: RF (health/type) + Isolation Forest (anomaly), model choice fixed up front
       -> verify.py: verdict (good/faulty, type, confidence, anomaly flag)
 ```
@@ -146,7 +154,8 @@ Structural differences worth being deliberate about, not accidental:
 
 - Run ANN and SVM against the current RF on the existing 12-feature set, focused on the
   three known-weak soft faults (degraded diode, Zener Vz-shift, leaky cap). Cheap to try,
-  directly motivated by §3.
+  directly motivated by §3. *(2026-11-28: 14 features now, and the weakest classes are Zener
+  leak, shorted turns and high-ESR C — see the update at the top.)*
 - Add MCC and a saved confusion matrix to `verify.py`/`demo.py`'s evaluation output.
 - Track train-vs-test accuracy gap for the RF model to catch the overfitting pattern seen
   in both Dieste-Velasco papers before it shows up as a real-hardware surprise.

@@ -7,27 +7,36 @@
 - ผังและตารางในไฟล์นี้มาจาก `hardware/sim/make_case1_breadboard.py` ซึ่ง**เช็กด้วยโปรแกรม**ว่าทุกขา
   ทุกสาย ไปถึง net ที่ถูกต้อง ไม่มี net ไหนช็อตกัน ไม่มีรูซ้ำ และไม่มีตัวต้านทานนอนทับกัน.
   ถ้าแก้ผัง ให้แก้ในไฟล์นั้นแล้วรัน `python3 hardware/sim/make_case1_breadboard.py` ใหม่ (ต้องขึ้น `OK`).
-- สถานะ: **แผนเท่านั้น ยังไม่ได้ต่อหรือวัดจริง** ตัวเลขที่ "ควรวัดได้" มาจากการคำนวณ.
+- สถานะ (อัปเดต 2026-11-28): **ต่อและวัดจริงแล้ว 2026-11-26/27** โดยต่อตามชื่อ node ไม่ได้ยึดรูตามผัง. ตัวเลข
+  "ควรได้" ในตารางมาจากการคำนวณ ส่วนย่อหน้า "วัดจริง" คือผลบนบอร์ด. ของจริงต่างจากแผนตรงนี้: divider ใช้ 20k แทน 22k
+  (3c), gain ของ ch A = 5.92 ไม่ใช่ 6.1 (ขั้นที่ 4), มี Rr 220 Ω เพิ่ม ซึ่งในวงจรคือ 221.4 Ω (3d) และมีช่องอ้างอิง offset
+  บน GPIO32 (ADC step 3).
+- `tools/` (ช่อง board, `upload.sh`, `last_capture.txt`, ไฟล์ zero-cal) คือ workspace ในเครื่อง ไม่อยู่ใน repo. flash
+  เองได้ด้วย `arduino-cli compile --fqbn esp32:esp32:esp32doit-devkit-v1 <โฟลเดอร์ sketch>` แล้ว `arduino-cli upload -p <port>`
+  ด้วย FQBN กับโฟลเดอร์เดียวกัน.
 
 ---
 
 ## 0. สรุปสั้น: วงจรนี้ทำอะไร
 
 ```
-ESP32 DAC (0–3.3V sine) ─► [ch A: difference amp ×6.1] ─► node A (±10V) ─► DUT ─► node B ─► Rr ─► GND
+ESP32 DAC (0–3.3V sine) ─► [ch A: difference amp ×5.92]─► node A (±10V) ─► DUT ─► node B ─► Rr ─► GND
                                 ▲                              │                  │
                    V_REF 1.65V ─┘ [ch B: buffer]               ▼                  ▼
                                                       [ch C: follower]    [ch D: follower]
                                                                │                  │
-                                                     divider 100k/22k/22k  divider 100k/22k/22k
+                                                     divider 100k/20k/20k  divider 100k/20k/20k
                                                                │                  │
                                                          P1 → GPIO34        P2 → GPIO35
 V_DUT = V_A − V_B ,  I = V_B / Rr        (OPA4134PA ตัวเดียว ใช้ครบ 4 channel)
 ```
 
+ตามของจริง: gain 5.92 (ออกแบบ 6.1), divider 20k (ออกแบบ 22k), Rr เลือกด้วยสายจั๊มป์ 220 Ω / 1k / 10k / 100k และ divider
+ชุดที่สามที่ขาเข้าต่อ GND → P_ref → GPIO32 (ช่องอ้างอิง offset, ADC step 3).
+
 | Channel ของ OPA4134 | ขา | หน้าที่ |
 |---|---|---|
-| A | 1 OUT, 2 −IN, 3 +IN | ขยาย DAC เป็น ±10 V: `V_A = 6.1 × (V_REF − V_DAC)` |
+| A | 1 OUT, 2 −IN, 3 +IN | ขยาย DAC เป็น ±10 V: `V_A = 6.1 × (V_REF − V_DAC)` (วัดจริง 5.92) |
 | B | 5 +IN, 6 −IN, 7 OUT | buffer V_REF = 1.65 V (แบ่งจาก 3V3 ของ ESP32) |
 | C | 10 +IN, 9 −IN, 8 OUT | follower อ่าน node A (FET input → ไม่ดึงกระแสจาก node) |
 | D | 12 +IN, 13 −IN, 14 OUT | follower อ่าน node B (สำคัญตอน Rr = 100 kΩ) |
@@ -47,9 +56,10 @@ V_DUT = V_A − V_B ,  I = V_B / Rr        (OPA4134PA ตัวเดียว �
    ไม่งั้นเฟสที่ส่งให้ ML จะเลื่อนไป 180°.
 4. **ไม่ใส่ Rr 100 Ω**: ที่ ±10 V ถ้า DUT ช็อต กระแส = 10/100 = **100 mA** เกินที่ OPA4134 จ่ายได้
    (short-circuit ~30–36 mA, datasheet) และตัวต้านทาน 1/4 W ร้อน (0.5 W). ใช้ 1k / 10k / 100k เท่านั้น
-   (1k + DUT ช็อต = 10 mA, 50 mW ปลอดภัย).
+   (1k + DUT ช็อต = 10 mA, 50 mW ปลอดภัย). **ต่อมาเพิ่ม 220 Ω (2026-11-27)** สำหรับ C ค่าใหญ่ ใช้ได้เฉพาะตอน
+   A ≤ 5 V (ดู 3d).
 5. **VR (trimmer 100 kΩ) ยังไม่ใส่**: ปรับแอมพลิจูดใน firmware แทน (1 count ของ DAC = 79 mV ที่ node A
-   ≈ 0.8 % ของ 10 V) — ไม่ต้องจูน VR สองตัวให้ตรงกันซึ่งยาก. ถ้าจะใส่ทีหลัง ต้องใส่ทั้งสองขาและจูนให้เท่ากัน.
+   ≈ 0.8 % ของ 10 V; ด้วย gain จริง 5.92 ≈ 75 mV) — ไม่ต้องจูน VR สองตัวให้ตรงกันซึ่งยาก. ถ้าจะใส่ทีหลัง ต้องใส่ทั้งสองขาและจูนให้เท่ากัน.
 
 ## 2. ของที่ต้องซื้อเพิ่ม (นอกจากใน BOM.md)
 
@@ -188,7 +198,7 @@ V_DUT = V_A − V_B ,  I = V_B / Rr        (OPA4134PA ตัวเดียว �
 
 ESP32 **3V3** → **j33** (สายส้ม). แถว 33 บน = จุดจ่าย 3V3 ของทั้งบอร์ด.
 
-### 3b. ตัวขยาย ±10 V (channel A, difference amp ×6.1)
+### 3b. ตัวขยาย ±10 V (channel A, difference amp ×6.1 — วัดจริง 5.92)
 
 | ☐ | ชิ้น | ค่า | จาก | ไป | หน้าที่ |
 |---|---|---|---|---|---|
@@ -243,7 +253,9 @@ P1 = 1.532 V, P2 = 1.509 V. `reader.FrontEnd.case1()` ใช้ค่าเฉ�
 
 **Rr4 220 Ω ใช้เฉพาะตอน A ≤ 5 V:** ถ้า DUT ช็อต กระแส = A/220 → 4.5 V ได้ 20 mA (OPA4134 จ่ายได้ ~35 mA) แต่ถ้าเพิ่มเป็น
 ±10 V จะได้ 45 mA ซึ่งเกิน. กำลังบน 220 Ω ≈ 46 mW ที่ 4.5 V (ตัว 1/4 W พอ). ใช้งาน: ย้ายสายเลือก Rr (JS, ปลายฝั่ง
-node B) ไปที่ขาบนของ Rr4 แล้วบอกค่าที่วัดได้จริง (2026-11-27: 217 Ω → `rr 217` ในช่อง board หรือ `--rr 217`).
+node B) ไปที่ขาบนของ Rr4 แล้วบอกค่าในวงจร **221.4 Ω** (`rr 221.4` ในช่อง board หรือ `--rr 221.4`). วัดขาตัวต้านทาน
+เปล่าได้ 217 Ω แต่สายเลือก Rr กับหน้าสัมผัสเพิ่มอีก ~4 Ω — 221.4 fit จาก R ชุด 1 % (ADC step 3); ตำแหน่งอื่นในวงจร =
+1022 / 10290 / 101300 Ω (`autorange.DEFAULT_RR_VALUES`).
 DUT แบบไม่เชิงเส้น (ไดโอด/LED/Zener) ให้วัดที่ Rr 1k — synth เทรนสารกึ่งตัวนำที่ 1k.
 
 DUT จะเสียบที่ **i40 (ขา + / anode)** และ **i44** — ยังไม่เสียบตอนนี้.
@@ -281,7 +293,7 @@ node A ไม่เป็น 0 พอดีเป็นเรื่องปก�
 ### ขั้นที่ 5: sine (ยังไม่ต่อ ADC, ยังไม่มี DUT)
 
 Flash `case1_frontend` (`up case1_frontend` ในช่อง board): แอมพลิจูด 63 counts →
-63 × 3.3/255 × 6.1 = **4.97 V peak** ที่ node A.
+63 × 3.3/255 × 6.1 = **4.97 V peak** ที่ node A (ของจริง: gain 5.92 และ DAC ~12.7 mV/count → วัดได้ A ≈ 4.5–4.66 V).
 
 | ☐ | จุดวัด | มิเตอร์ AC (50 Hz) | มิเตอร์ DC | สโคป |
 |---|---|---|---|---|
@@ -556,7 +568,7 @@ Rleak/X_C รวม ~12 (synth ≤ 12.5); ตัวที่อยู่ตร�
 
 | DUT | R จาก fit | verdict | ตีความ |
 |---|---|---|---|
-| 2k ตัวเดียว | 1978 Ω | FAULTY (R, conf 0.80, anomaly) | 2k อยู่นอกช่วงที่เทรน (synth R = 1k ±20%): slope0 0.43 เทียบกับ 0.86–1.23 |
+| 2k ตัวเดียว | 1978 Ω | FAULTY (R, conf 0.80, anomaly) | 2k อยู่นอกช่วงที่เทรน (synth R = 1k ±20%): slope0 0.43 เทียบกับ 0.86–1.23 — synth ตอนนั้นเทรน R ค่าเดียว; ตั้งแต่ 2026-11-27 เทรนทุกค่า และ 2k จากชุด 1 % ได้ GOOD |
 | 2k ×2 ขนาน | 996 Ω | **GOOD** (R, conf 0.58, anomaly) | ถูกต้อง แต่ confidence ต่ำ และ anomaly ยังขึ้น |
 
 ที่ยังต่างจาก synth: (1) **V–I เหลื่อมเฟส ≈ 2.0°** (≈ 110 µs ที่ 50 Hz, น่าจะมาจากช่วงห่างระหว่างการอ่าน V กับ I) ทำให้เส้นกลายเป็นวงรีบาง,
@@ -569,21 +581,34 @@ Rleak/X_C รวม ~12 (synth ≤ 12.5); ตัวที่อยู่ตร�
 ทุกครั้งที่บอร์ด reset (รวมตอนกด Enter ในช่อง board เพื่อ capture) ขา DAC ลอยชั่วครู่ → node A
 ค้าง DC ประมาณ +1.4 V สั้นๆ (`V_A = V+` ของ ch A เมื่อ R1 ไม่มีกระแส) — ไม่อันตรายต่อ DUT ทั่วไป.
 
-## 8. ซอฟต์แวร์สำหรับ Case 1 (ทำแล้ว 2026-11-25, ยังไม่ได้รันกับบอร์ดจริง)
+## 8. ซอฟต์แวร์สำหรับ Case 1 (ใช้กับบอร์ดจริงแล้ว — อัปเดต 2026-11-28)
 
-ใช้งาน: flash `case1_frontend` แล้วกด Enter ในช่อง board (`mode frontend`, `rr` = ตัวที่ JS เลือกอยู่)
-หรือ `python3 hardware/reader.py --port <port> --frontend --rr 1000 --verify`. reader เลือกค่าคงที่
-Case 1 เองจาก meta line (`frontend_case=1`); ถ้าไฟล์ capture ไม่มีบรรทัดนั้น ใส่ `--fe case1`.
+firmware สามตัวใน `firmware/esp32/case1/` ใช้วงจร ขา และ frame เดียวกัน (ภาพรวมทุก sketch: `firmware/esp32/README.md`):
 
-1. **Firmware `firmware/esp32/case1/case1_frontend/`** (คัดลอกจาก `stage1_frontend`):
-   - กลับ LUT: `DAC_CENTER − amp × sin` เพื่อให้ node A = +A·sin(drive phase) (ch A กลับเฟส).
-   - `FRONTEND_GAIN = 6.1`, แอมพลิจูด **63 counts → A ≈ 5.0 V** เป็นค่าเริ่มต้น (ตรงกับที่ `synth.py`
-     เทรนไว้ → ไดโอดยังไม่ out-of-distribution, ปลอดภัยกับ LED). 126 counts → ≈ 10 V ใช้หลัง retrain
-     ที่ A = 10 (ROADMAP Phase B).
-   - `DAC_CENTER` ปรับตามค่า node A ที่จดในขั้นที่ 4 (1 count ≈ 79 mV ที่ node A).
-2. **`hardware/reader.py` `FrontEnd.case1()`**: divider `r_in=100k, r_up=22k, r_dn=22k`,
-   `buffered=True` → **ไม่มีเทอมกระแสโหลด** (`I = V_B / Rr` ตรงๆ) เพราะ follower D ไม่ดึงกระแสจาก node B.
-   ค่าเดิม `FrontEnd()` (100k/56k/56k + เทอมโหลด) ยังเป็นของวงจร ±5 V. ทดสอบใน `tests/test_reader.py`.
+| sketch | ทำอะไร | ใช้เมื่อ |
+|---|---|---|
+| `case1_frontend_mf` | ขับ 1000/M Hz (1 kHz … 1 Hz, สั่ง `f <hz>`), ADC แบบ DMA, 50 จุด/รอบ, ส่งเป็น burst, อ่านช่องอ้างอิง GPIO32 หลังทุก burst | **ตัวหลัก**: `autorange.py`, `collect.py`, ช่อง board |
+| `case1_frontend_1k` | 1 kHz อย่างเดียว, ADC แบบ DMA, burst | สำรอง |
+| `case1_frontend` | 50 Hz, `analogReadMilliVolts()` แบบ polling, ส่งต่อเนื่อง | สำรอง / bring-up |
+
+ค่าที่ทั้งสามตัวใช้ร่วมกัน: กลับ LUT (`DAC_CENTER − amp × sin`) ให้ node A = +A·sin(drive phase) เพราะ ch A กลับเฟส;
+`DAC_CENTER = 132` (จากขั้นที่ 4); `DAC_AMPLITUDE_COUNTS = 63` → **A ≈ 4.66 V** ที่วัดได้ (อยู่ในช่วงที่ synth เทรน
+A = 4–6 V, ปลอดภัยกับ LED); `FRONTEND_GAIN = 5.92`. 126 counts (≈ ±10 V) ใช้ได้หลังเทรน synth ที่ A = 10 เท่านั้น
+(ROADMAP Phase B).
+
+ใช้งาน:
+- `python3 hardware/autorange.py --rr <Rr ที่ต่ออยู่>` — เลือกความถี่ + Rr เอง แล้วบอกค่าและคำตอบ (GOOD / FAULTY /
+  OUT_OF_RANGE)
+- `python3 hardware/collect.py <plan>` — เก็บข้อมูลเป็นชุด (ดู `hardware/captures/README.md`)
+- `python3 hardware/reader.py --port <port> --frontend --rr 1022 --zero <ไฟล์ zero-cal> --verify` — capture เดียว.
+  reader เลือกค่าคงที่ Case 1 เองจาก meta line (`frontend_case=1`); ไฟล์ที่ไม่มีบรรทัดนั้นใส่ `--fe case1`
+- ช่อง board ใน workspace (`tools/`, มีแค่ในเครื่อง): Enter = capture, `zero` = zero-cal, `auto` = autorange, `rr <ohm>`
+  = บอก Rr ที่ต่ออยู่
+
+**`hardware/reader.py` `FrontEnd.case1()`**: divider แยกต่อช่องตามค่าที่วัดจริง (ch C 100k/19.38k/19.43k, ch D
+101k/19.48k/19.51k, 3V3 = 3.32 V), `buffered=True` → **ไม่มีเทอมกระแสโหลด** (`I = V_B / Rr` ตรงๆ) เพราะ follower D
+ไม่ดึงกระแสจาก node B. จากนั้นหัก offset ของ zero-cal และส่วนที่เลื่อนไปตามช่องอ้างอิง GPIO32 (`reader.ref_corrected`).
+ค่าเดิม `FrontEnd()` (100k/56k/56k + เทอมโหลด) ยังเป็นของวงจร ±5 V. ทดสอบใน `tests/test_reader.py`.
 
 ## 9. ถ้าผิดปกติ
 
@@ -593,6 +618,6 @@ Case 1 เองจาก meta line (`frontend_case=1`); ถ้าไฟล์ c
 | node A ค้าง ~+13 V หรือ ~−13 V | ch A อิ่มตัว: R ขาดขา, ขา 2/3 สลับ, V_REF ไม่มา |
 | node A = +1.65 V DC | ต่อ V_REF เข้าขา 3 ตรงแบบ BOM §4 (ขาด R5/R6) |
 | sine แบนยอด | แอมพลิจูดเกิน หรือโหลดหนัก (Rr ต่ำ + DUT ช็อต) |
-| P1/P2 ไม่ใช่ ~1.49 V ตอน node = 0 | 3V3 ไม่มา (W12 / j33), หรือ R ผิดค่า |
+| P1/P2 ไม่ใช่ ~1.51 V ตอน node = 0 (แบบ 22k = 1.49 V) | 3V3 ไม่มา (W12 / j33), หรือ R ผิดค่า |
 | ADC อ่านได้ 0 หรือ 4095 ตลอด | สาย GPIO หลุด หรือ P1/P2 ผิด — ถอดสาย GPIO ก่อนแก้ |
 | ชิปร้อน | ไฟ V+/V− สลับ → ถอดไฟทันที ชิปอาจเสียแล้ว (มีสำรองไว้) |

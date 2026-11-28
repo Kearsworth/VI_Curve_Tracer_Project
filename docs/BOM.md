@@ -1,8 +1,8 @@
 # BOM.md — Case 1 analog front end (Dr. Wathis's ±10 V drive stage)
 
-Decided in chat 2026-11-25. This is the **physical build we are doing**: the advisor's
+Decided in chat 2026-11-25, **built 2026-11-26/27**. This is the physical build: the advisor's
 0–3.3 V → ±10 V drive stage, rebuilt with the parts we actually bought. Lists **only those
-parts**.
+parts**; what the build changed is under the table.
 
 > The NE5532 + ±9 V (MT3608 / ICL7660S) design in `docs/STANDALONE_TESTER_PLAN.md` is a
 > *different, ±5 V* front end. We are **not** building that one with these parts. Keep that
@@ -26,6 +26,16 @@ parts**.
 | IC socket, DIP-14 | 1–2 | make the OPA4134 swappable (don't solder it directly) |
 | Breadboard + jumper wires | — | prototyping |
 
+**As built (2026-11-26/27, every value in `docs/CASE1_WIRING.md`):**
+- Rr positions are **220 Ω / 1k / 10k / 100k** (221.4 / 1022 / 10290 / 101300 Ω in circuit).
+  100 Ω isn't fitted: a shorted DUT would ask more current than the op-amp gives.
+- VR1/VR2 aren't fitted: the amplitude is set in firmware instead. The 10 µF caps aren't fitted
+  either: 0.1 µF only, and the step-6 noise check (12.8 counts) came out in the "usable" band,
+  below the level where they'd be added.
+- Added parts not in the table: the return-path dividers (100 kΩ ×2, 20 kΩ ×4 — 22 kΩ was the
+  plan), C5/C6 at the ADC pins (100 pF until the ordered 1 nF arrive), and the offset-reference
+  divider on GPIO32 (20 kΩ ×2, 100 kΩ, 0.1 µF).
+
 ---
 
 ## 2. Gain and resistor values (why these give ±10 V)
@@ -33,6 +43,8 @@ parts**.
 - Difference amp around the op-amp: gain = R_f / R_in, with R_in = 10 kΩ.
 - R_f = **51 kΩ + 10 kΩ in series ≈ 61 kΩ** → gain ≈ **6.1** → ESP32's ±1.65 V swing × 6.1 ≈ **±10.1 V**.
 - Trim **VR (100 kΩ)** down slightly to land exactly on ±10 V.
+- *As built:* no trimmer, and the gain measured **5.92** ((49.73k + 9.80k) / 10.05k), so a full
+  ±1.65 V swing would give ±9.8 V. The firmware uses 63 DAC counts instead: A ≈ 4.66 V at node A.
 - **Both feedback legs must match** (inverting + non-inverting side). Use 1 % metal film; if
   the two sides differ, the 0 V midpoint drifts (common-mode error).
 - **V_REF = 1.65 V** from a 10 k / 10 k divider (half of 3.3 V), **buffered by one OPA4134
@@ -76,26 +88,27 @@ ESP32 DAC ──/\/\──●───────────────┐   
 > from §2 instead (V_REF → 10 k → `+`, and `+` → 51 k + 10 k → GND), plus a second return-path
 > channel. Hole-by-hole wiring: `docs/CASE1_WIRING.md`.
 
-(OPA4134PA is quad: use 1 channel for the drive amp, 1 for the V_REF buffer, and 1 for the
-±10 V→0–3.3 V **return path** amp in section 5. Confirm channel pin numbers in the OPA4134
-datasheet before wiring.)
+(OPA4134PA is quad: use 1 channel for the drive amp, 1 for the V_REF buffer, and 2 for the
+±10 V→0–3.3 V **return path**: unity followers on node A and node B, each into a divider. Pin
+numbers are checked against the datasheet in `docs/CASE1_WIRING.md` §0.)
 
 ---
 
 ## 5. ⚠ Consequences of ±10 V (read before trusting results)
 
 1. **The model is out-of-distribution at ±10 V for diodes/LED/Zener.** `synth.py` trains at
-   **A = 5 V** (R/C/L/D/LED; Zener uses A = 6 V). A diode knee sits at ~0.6 V regardless of amplitude, so after normalising by A
-   the knee lands at 0.6/5 = 0.12 (training) vs 0.6/10 = 0.06 (at ±10 V) — a different shape.
-   **R, C, L are unaffected** (they scale with A, so the normalised loop is identical).
-   → Before trusting diode/LED/Zener verdicts, **retrain `synth.py` with A = 10** (or add
-   A = 10 to the training set). This belongs in `docs/ROADMAP.md` Phase B.
+   **A = 4–6 V** (all components, since 2026-11-27). A diode knee sits at ~0.6 V regardless of
+   amplitude, so after normalising by A the knee lands at 0.6/5 = 0.12 (training) vs 0.6/10 =
+   0.06 (at ±10 V) — a different shape. **R, C, L are unaffected** (they scale with A, so the
+   normalised loop is identical). The firmware therefore drives A ≈ 4.66 V, inside the training
+   band. → Before raising the amplitude, **add A = 10 to the training set** (`docs/ROADMAP.md`
+   Phase B).
 2. ⚠ **LED reverse rating (~5 V).** At ±10 V the reverse half-cycle can exceed a typical LED's
    reverse breakdown. Add a series/clamp for LED tests, or test LEDs at a lower amplitude.
-3. **Return path still required.** The ±10 V DUT response must be scaled to **0–3.3 V** before
-   the ESP32 ADC (one OPA4134 channel + resistor divider, or a divider + 3.3 V Zener clamp).
-   This is the project's existing open item — see `firmware/esp32/README.md` and
-   `docs/ROADMAP.md` Phase A (return-path gain still unconfirmed).
+3. **Return path: built.** The ±10 V nodes must be scaled to **0–3.3 V** before the ESP32 ADC.
+   As built, OPA4134 channels C/D follow node A / node B into 100k/20k/20k dividers: a node at
+   ±10 V reads 0.63–2.40 V at the pin, and even a saturated op-amp (±13.5 V) stays inside
+   0.32–2.71 V (`docs/CASE1_WIRING.md` §6, 3c).
 
 ---
 

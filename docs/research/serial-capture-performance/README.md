@@ -5,6 +5,10 @@ two-board setup (`firmware/esp32/dual_board/`). Not a roadmap task — a side to
 further, parked here so the investigation already done isn't lost. See
 `docs/ROADMAP.md` for what's actually scheduled.
 
+*Status 2026-11-28:* the capture path no longer streams. The Case 1 burst firmware records whole
+cycles into RAM and prints them as one burst, and `reader.read_capture` reads the port in bulk.
+So the per-line parsing cost below now matters only for `live_pipeline_demo.py` (two-board era).
+
 ## The observation that started this
 
 `live_pipeline_demo.py` pegged a CPU core near 100% while running. First fix attempt
