@@ -78,8 +78,9 @@ axes independently.
   on soft-fault classification. RF stays our main model for its explainability and low
   tuning cost — that's a deliberate trade-off we're making, not a literature-settled fact.
   See `docs/LITERATURE.md` §3 before treating RF's superiority as proven. Our own benchmark
-  (2026-11-28, `vi_ml/compare_models.py`) agrees with keeping RF on our 14 features: RF and
-  gradient boosting 97.3 % on unseen synthetic data, SVM 95.8 %, an MLP 95.6 %.
+  (2026-11-28, `vi_ml/compare_models.py`, 300 training samples per class) agrees with keeping RF
+  on our 14 features: RF and gradient boosting 97.3 % on unseen synthetic data, SVM 95.8 %, an
+  MLP 95.6 %. More data helped more than another model, so `train.py` now uses 1,200 per class.
 - **Isolation Forest (anomaly)**: trained on **good parts only**, flags anything unusual.
   Matches the real world where faulty examples are rare. Lower AUC than the supervised
   model (0.82 on the full-value-range synth, `vi_ml/eval_synth.py`; it was 0.87 on the old

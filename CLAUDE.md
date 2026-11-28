@@ -29,10 +29,10 @@ form; Phase B (real data) is under way.**
 - **PC: `hardware/reader.py` → the unchanged ML pipeline.** `hardware/autorange.py` picks frequency
   and Rr with `synth.auto_range`, then `autorange.judge` gives the final answer: the model's
   verdict, FAULTY for open/short, or OUT_OF_RANGE when |Z|/Rr is outside 0.25–4.
-- **ML: trained on synthetic data only**: any value of R/C/L/D/LED/Zener, simulated auto-range,
-  measured board imperfections, 14 features. On 7,200 unseen synthetic samples
-  (`python3 vi_ml/eval_synth.py`): health 97.3 % (good called GOOD 98.7 %), type 100 % on good
-  parts, anomaly ROC-AUC 0.82.
+- **ML: trained on synthetic data only** (14,400 samples since 2026-11-28): any value of
+  R/C/L/D/LED/Zener, simulated auto-range, measured board imperfections, 14 features. On 7,200
+  unseen synthetic samples (`python3 vi_ml/eval_synth.py`): health 97.8 % (good called GOOD
+  98.8 %), type 100 % on good parts, anomaly ROC-AUC 0.82.
 - **Real data: `python3 hardware/eval_real.py` → 52/52** (24 kit resistors 100 Ω–300 kΩ, C,
   diode, LED; open, short, reversed, graded soft faults). Lock-in values are within ±1.5 % of a
   multimeter.
@@ -113,7 +113,7 @@ python3 verify.py                           # inference demo on fresh samples
 # from repo root:
 pytest -q                                   # run the invariant tests (do this after edits)
 python3 hardware/eval_real.py               # the model on the labelled real captures
-python3 vi_ml/eval_synth.py                 # synthetic numbers on an unseen set (~20 s)
+python3 vi_ml/eval_synth.py                 # synthetic numbers on an unseen set (~1 min)
 ```
 
 ## 6. Key design decisions — DO NOT silently undo these
@@ -153,8 +153,8 @@ why and ask first. (Full reasoning in `docs/DESIGN.md`.)
 
 - The model is trained on **synthetic data only**. The real check is 52 labelled captures (all
   right): too few to compare with the synthetic numbers, and soft faults only at a few strengths.
-- **Soft faults are the weak spot** (synthetic, `vi_ml/eval_synth.py`): Zener leak 81 %, shorted
-  turns 83 %, high-ESR C 84 %, leaky C 87 %, high-DCR L 93 %, reversed/degraded diode ~97 %;
+- **Soft faults are the weak spot** (synthetic, `vi_ml/eval_synth.py`): high-ESR C 85 %, Zener
+  leak 86 %, shorted turns 87 %, leaky C 90 %, high-DCR L 94 %, reversed/degraded diode ~97–98 %;
   hard faults 100 %. "Good" C allows DF up to 6% (class-II ceramics measured ~4–5%);
   healthy aluminium electrolytics can reach DF 10–20%, which this synth would call high-ESR —
   ESR limits really depend on the capacitor type (needs the reference/type path).
