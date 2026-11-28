@@ -99,6 +99,28 @@ def plans():
         p["led"].append(dict(slug=f"LED_ser_{ohm(r)}", what=f"LED อนุกรม R {ohm(r)} Ω (ขายาวไปทาง node A)",
                              component="LED", health=health, fault="degraded", rr=1000.0,
                              reference=f"LED + {ohm(r)} ohm in series (synth degraded Rs 200-800 ohm)"))
+    # next board session (docs/NEXT_BOARD_SESSION.md): parts not tried yet, only values that range at 1 kHz
+    p["zener"] = [dict(slug=f"Z{v}V", what=f"ซีเนอร์ {v} V (แถบไปทาง node B)", component="Z", health="good",
+                       fault="", rr=1000.0, reference=f"Zener {v} V (marking); at A ~4.66 V the reverse knee "
+                       "shows only below ~3.6 V") for v in ("2.7", "3.0", "3.3")]
+    p["l"] = []
+    for L in (22e-3, 47e-3, 100e-3, 220e-3, 1.0):
+        f, rr = synth.auto_range(lambda ff, L=L: complex(0.0, 2 * np.pi * ff * L))
+        if f != 1000.0:
+            continue
+        x = 2 * np.pi * 1000.0 * L
+        p["l"].append(dict(slug=f"L{L * 1e3:g}mH", what=f"ตัวเหนี่ยวนำ {L * 1e3:g} mH (วัด DCR ด้วยมิเตอร์ก่อน)",
+                           component="L", health="boundary", fault="", rr=rr,
+                           reference=f"{L * 1e3:g} mH choke (marking); X_L {x:.0f} ohm at 1 kHz; good in synth needs "
+                                     f"Q >= 8, i.e. DCR <= {x / 8:.0f} ohm: measure DCR, then relabel good if it fits"))
+    p["c"] = []
+    for C in (1e-9, 10e-9, 1e-6):
+        f, rr = synth.auto_range(lambda ff, C=C: complex(0.0, -1 / (2 * np.pi * ff * C)))
+        if f != 1000.0:
+            continue
+        name = f"{C * 1e9:g}n" if C < 1e-6 else f"{C * 1e6:g}u"
+        p["c"].append(dict(slug=f"C{name}", what=f"ตัวเก็บประจุไม่มีขั้ว {name}F (ฟิล์มหรือเซรามิก)", component="C",
+                           health="good", fault="", rr=rr, reference=f"{name}F film/ceramic (marking)"))
     for items in p.values():
         items.sort(key=lambda it: it["rr"])
     return p
@@ -145,10 +167,12 @@ def append_label(labels, name, item, rr, zero_label, note):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("plan", nargs="?", help="r | r_oor | esr | leak | degraded | led")
+    ap.add_argument("plan", nargs="?", help="r | r_oor | esr | leak | degraded | led | zener | l | c")
     ap.add_argument("--list", action="store_true", help="show the plans and exit")
     ap.add_argument("--port", default="auto")
     ap.add_argument("--rr-now", type=float, default=1000.0, help="nominal Rr the jumper is on now (default 1000)")
+    ap.add_argument("--zero", default=ZERO, metavar="FILE",
+                    help="zero-cal capture taken with no DUT (default: tools/zero_capture.txt)")
     ap.add_argument("--zero-label", default="2026-11-27_mf1k_zero_ref_noDUT.txt",
                     help="hardware/captures copy of tools/zero_capture.txt, for labels.csv")
     ap.add_argument("--out", default=CAPTURES, help="where captures go (default hardware/captures)")
@@ -171,12 +195,14 @@ def main(argv=None):
     labels = args.labels or os.path.join(args.out, "labels.csv")
     warnings.filterwarnings("ignore", category=UserWarning)
 
-    zero = reader.zero_cal(reader.load_capture(ZERO))
+    if not os.path.exists(args.zero):
+        sys.exit(f"zero-cal file not found: {args.zero} (take one with no DUT, or pass --zero FILE)")
+    zero = reader.zero_cal(reader.load_capture(args.zero))
     if zero[0].ref_counts is None:
-        sys.exit("tools/zero_capture.txt has no reference reading: take a new zero-cal with case1_frontend_mf")
+        sys.exit(f"{args.zero} has no reference reading: take a new zero-cal with case1_frontend_mf")
     zl = os.path.join(CAPTURES, args.zero_label)
-    if not (os.path.exists(zl) and filecmp.cmp(zl, ZERO, shallow=False)):
-        print(f"WARNING: {args.zero_label} is not the same file as tools/zero_capture.txt — fix --zero-label")
+    if not (os.path.exists(zl) and filecmp.cmp(zl, args.zero, shallow=False)):
+        print(f"WARNING: {args.zero_label} is not the same file as {args.zero} — fix --zero-label")
     port = args.port
     if port == "auto":
         from serial.tools import list_ports
